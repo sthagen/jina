@@ -45,6 +45,8 @@
 
 
 
+
+
 # Change Logs
 
 Jina is released on every Friday evening. The PyPi package and Docker Image will be updated, the changes of the release will be tracked by this file.
@@ -214,6 +216,9 @@ Jina is released on every Friday evening. The PyPi package and Docker Image will
 - [Release Note (`1.1.0`)](#release-note-110)
 - [Release Note (`1.1.1`)](#release-note-111)
 - [Release Note (`1.1.2`)](#release-note-112)
+- [Release Note (`1.1.3`)](#release-note-113)
+- [Release Note (`1.1.4`)](#release-note-114)
+- [Release Note (`1.1.5`)](#release-note-115)
 
 <!-- END doctoc generated TOC please keep comment here to allow auto update -->
 
@@ -8276,4 +8281,42 @@ Jina is released on every Friday evening. The PyPi package and Docker Image will
  - [[```387939b9```](https://github.com/jina-ai/jina/commit/387939b973aca74c9bc6d9d5c800032dbc21b803)] __-__ fix code snippet (*Han Xiao*)
  - [[```5dcaf9b0```](https://github.com/jina-ai/jina/commit/5dcaf9b024f0e902f02b572cb4882f2252bcf916)] __-__ __docs__: update TOC (*Jina Dev Bot*)
  - [[```d24d97ca```](https://github.com/jina-ai/jina/commit/d24d97ca4c69dd4daf070c7dd1bccf40ec666491)] __-__ __version__: the next version will be 1.1.3 (*Jina Dev Bot*)
+
+<a name=release-note-1-1-4></a>
+## Release Note (`1.1.4`)
+
+> Release time: 2021-04-11 10:58:39
+
+
+
+🙇 We'd like to thank all contributors for this new release! In particular,
+ Han Xiao,  Jina Dev Bot,  🙇
+
+
+### 🆕 New Features
+
+ - [[```d89564d7```](https://github.com/jina-ai/jina/commit/d89564d72e9f520714f82a8b047bf55e6d226289)] __-__ __rest__: expose reload api to rest interface (#2301) (*Han Xiao*)
+
+### 🍹 Other Improvements
+
+ - [[```c6ca3c8f```](https://github.com/jina-ai/jina/commit/c6ca3c8fb41a399e1e651974a8c8c2fafb043eac)] __-__ __version__: the next version will be 1.1.4 (*Jina Dev Bot*)
+
+<a name=release-note-1-1-5></a>
+## Release Note (`1.1.5`)
+
+> Release time: 2021-04-11 23:04:49
+
+
+
+🙇 We'd like to thank all contributors for this new release! In particular,
+ Han Xiao,  Jina Dev Bot,  🙇
+
+
+### 🐞 Bug fixes
+
+ - [[```084c4300```](https://github.com/jina-ai/jina/commit/084c43005e53a1f34e1fce663894e8c0fdc248ea)] __-__ __cicd__: add submodule into docker images (*Han Xiao*)
+
+### 🍹 Other Improvements
+
+ - [[```4a2fbae5```](https://github.com/jina-ai/jina/commit/4a2fbae5bc1d8613f4cd441812293af69cb0bf5a)] __-__ __version__: the next version will be 1.1.5 (*Jina Dev Bot*)
 
