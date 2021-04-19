@@ -3,10 +3,10 @@ import os
 
 import numpy as np
 import pytest
+import tensorflow as tf
+import torch
 from google.protobuf.json_format import MessageToDict
 from scipy.sparse import coo_matrix, bsr_matrix, csr_matrix, csc_matrix
-import torch
-import tensorflow as tf
 
 from jina import NdArray, Request
 from jina.proto.jina_pb2 import DocumentProto
@@ -527,6 +527,17 @@ def test_update_on_no_empty_doc():
     assert d.dict() == d0
 
 
+def test_update_on_no_empty_doc_with_exclude():
+    s, d = get_test_doc()
+    d0 = s.dict()
+    d0.pop('id')
+    # this will not update anything as d and s are in the same structure
+    d.update(s, exclude_fields=('id',))
+    d1 = d.dict()
+    d1.pop('id')
+    assert d1 == d0
+
+
 def test_update_chunks():
     s, d = get_test_doc()
     d.update(s, include_fields=('chunks',), exclude_fields=None)
@@ -781,6 +792,17 @@ def test_document_sparse_embedding(
     assert isinstance(embedding, return_expected_type)
     if return_sparse_ndarray_cls_type == 'torch':
         assert embedding.is_sparse
+
+    if return_sparse_ndarray_cls_type == 'scipy':
+        np.testing.assert_equal(embedding.todense(), scipy_sparse_matrix.todense())
+    elif return_sparse_ndarray_cls_type == 'torch':
+        np.testing.assert_equal(
+            embedding.to_dense().numpy(), scipy_sparse_matrix.todense()
+        )
+    elif return_scipy_class_type == 'tf':
+        np.testing.assert_equal(
+            tf.sparse.to_dense(embedding).numpy(), scipy_sparse_matrix.todense()
+        )
 
 
 def test_siblings_needs_to_be_set_manually():
