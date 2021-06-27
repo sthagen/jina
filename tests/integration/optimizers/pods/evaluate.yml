@@ -1,9 +1,3 @@
 !DummyTextEvaluator
 metas:
   py_modules: 'dummy_evaluate.py'
-requests:
-  on:
-    SearchRequest:
-      - !TextEvaluateDriver
-        with:
-          traversal_paths: [ 'r' ]

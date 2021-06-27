@@ -11,8 +11,14 @@ arrVar=()
 for changed_file in $CHANGED_FILES; do
   case ${changed_file} in
     tests/* | \
+    .github/* | \
+    scripts/* | \
+    jina/helloworld/* | \
     jina/proto/jina_pb2.py | \
-    jina/proto/jina_pb2_grpc.py)
+    jina/proto/jina_pb2_grpc.py | \
+    docs/* | \
+    setup.py | \
+    fastentrypoints.py)
     ;;*)
       echo keeping ${changed_file}
       arrVar+=(${changed_file})

@@ -1,7 +1,9 @@
 import pytest
 
+from jina.enums import SchedulerType, SocketType, PollingType
 from jina.parsers import set_pod_parser
-from jina.peapods import CompoundPod
+from jina import __default_executor__
+from jina.peapods import CompoundPod, Pod
 
 
 @pytest.fixture(scope='function')
@@ -25,7 +27,7 @@ def pod_args_singleton():
         '--name',
         'test2',
         '--uses-before',
-        '_pass',
+        __default_executor__,
         '--parallel',
         '1',
         '--replicas',
@@ -44,14 +46,7 @@ def test_name(pod_args):
 def test_host(pod_args):
     with CompoundPod(pod_args) as pod:
         assert pod.host == '0.0.0.0'
-        assert pod.host_in == '0.0.0.0'
-        assert pod.host_out == '0.0.0.0'
-
-
-def test_address_in_out(pod_args):
-    with CompoundPod(pod_args) as pod:
-        assert pod.host in pod.address_in
-        assert pod.host in pod.address_out
+        assert pod.head_host == '0.0.0.0'
 
 
 def test_is_ready(pod_args):
@@ -116,42 +111,35 @@ def test_pod_naming_with_parallel(runtime):
         assert bp.head_pea.name == 'pod/head'
         assert bp.tail_pea.name == 'pod/tail'
 
-        assert bp.replicas[0].name == 'pod/0'
-        assert bp.replicas[0].peas[0].name == 'pod/0/head'
-        assert bp.replicas[0].peas[1].name == 'pod/0/tail'
-        assert bp.replicas[0].peas[2].name == 'pod/0/0'
-        assert bp.replicas[0].peas[3].name == 'pod/0/1'
+        assert bp.replicas[0].name == 'pod/rep-0'
+        assert bp.replicas[0].peas[0].name == 'pod/rep-0/head'
+        assert bp.replicas[0].peas[0]._is_inner_pea is False
+        assert bp.replicas[0].peas[1].name == 'pod/rep-0/pea-0'
+        assert bp.replicas[0].peas[1]._is_inner_pea
+        assert bp.replicas[0].peas[2].name == 'pod/rep-0/pea-1'
+        assert bp.replicas[0].peas[2]._is_inner_pea
+        assert bp.replicas[0].peas[3].name == 'pod/rep-0/tail'
+        assert bp.replicas[0].peas[3]._is_inner_pea is False
 
-        assert bp.replicas[1].name == 'pod/1'
-        assert bp.replicas[1].peas[0].name == 'pod/1/head'
-        assert bp.replicas[1].peas[1].name == 'pod/1/tail'
-        assert bp.replicas[1].peas[2].name == 'pod/1/0'
-        assert bp.replicas[1].peas[3].name == 'pod/1/1'
+        assert bp.replicas[1].name == 'pod/rep-1'
+        assert bp.replicas[1].peas[0].name == 'pod/rep-1/head'
+        assert bp.replicas[1].peas[0]._is_inner_pea is False
+        assert bp.replicas[1].peas[1].name == 'pod/rep-1/pea-0'
+        assert bp.replicas[1].peas[1]._is_inner_pea
+        assert bp.replicas[1].peas[2].name == 'pod/rep-1/pea-1'
+        assert bp.replicas[1].peas[2]._is_inner_pea
+        assert bp.replicas[1].peas[3].name == 'pod/rep-1/tail'
+        assert bp.replicas[1].peas[3]._is_inner_pea is False
 
-        assert bp.replicas[2].name == 'pod/2'
-        assert bp.replicas[2].peas[0].name == 'pod/2/head'
-        assert bp.replicas[2].peas[1].name == 'pod/2/tail'
-        assert bp.replicas[2].peas[2].name == 'pod/2/0'
-        assert bp.replicas[2].peas[3].name == 'pod/2/1'
-
-        # runtime
-        assert bp.head_pea.runtime.name == 'pod/head/ZEDRuntime'
-        assert bp.tail_pea.runtime.name == 'pod/tail/ZEDRuntime'
-
-        assert bp.replicas[0].peas[0].runtime.name == 'pod/0/head/ZEDRuntime'
-        assert bp.replicas[0].peas[1].runtime.name == 'pod/0/tail/ZEDRuntime'
-        assert bp.replicas[0].peas[2].runtime.name == 'pod/0/0/ZEDRuntime'
-        assert bp.replicas[0].peas[3].runtime.name == 'pod/0/1/ZEDRuntime'
-
-        assert bp.replicas[1].peas[0].runtime.name == 'pod/1/head/ZEDRuntime'
-        assert bp.replicas[1].peas[1].runtime.name == 'pod/1/tail/ZEDRuntime'
-        assert bp.replicas[1].peas[2].runtime.name == 'pod/1/0/ZEDRuntime'
-        assert bp.replicas[1].peas[3].runtime.name == 'pod/1/1/ZEDRuntime'
-
-        assert bp.replicas[2].peas[0].runtime.name == 'pod/2/head/ZEDRuntime'
-        assert bp.replicas[2].peas[1].runtime.name == 'pod/2/tail/ZEDRuntime'
-        assert bp.replicas[2].peas[2].runtime.name == 'pod/2/0/ZEDRuntime'
-        assert bp.replicas[2].peas[3].runtime.name == 'pod/2/1/ZEDRuntime'
+        assert bp.replicas[2].name == 'pod/rep-2'
+        assert bp.replicas[2].peas[0].name == 'pod/rep-2/head'
+        assert bp.replicas[2].peas[0]._is_inner_pea is False
+        assert bp.replicas[2].peas[1].name == 'pod/rep-2/pea-0'
+        assert bp.replicas[2].peas[1]._is_inner_pea
+        assert bp.replicas[2].peas[2].name == 'pod/rep-2/pea-1'
+        assert bp.replicas[2].peas[2]._is_inner_pea
+        assert bp.replicas[2].peas[3].name == 'pod/rep-2/tail'
+        assert bp.replicas[2].peas[3]._is_inner_pea is False
 
 
 @pytest.mark.parametrize(
@@ -193,7 +181,7 @@ def test_host_list_matching(num_hosts, used_hosts):
             '--replicas',
             '3',
             '--peas-hosts',
-            *[f'0.0.0.{i+1}' for i in range(num_hosts)],
+            *[f'0.0.0.{i + 1}' for i in range(num_hosts)],
             '--runtime-backend',
             'process',
         ]
@@ -203,3 +191,69 @@ def test_host_list_matching(num_hosts, used_hosts):
     assert replica_args[0].peas_hosts == used_hosts[0]
     assert replica_args[1].peas_hosts == used_hosts[1]
     assert replica_args[2].peas_hosts == used_hosts[2]
+
+
+@pytest.mark.parametrize(
+    'polling, parallel, pea_scheduling, pea_socket_in, pea_socket_out',
+    (
+        (
+            'all',
+            1,
+            SchedulerType.LOAD_BALANCE,
+            SocketType.DEALER_CONNECT,
+            SocketType.PUSH_CONNECT,
+        ),
+        (
+            'all',
+            2,
+            SchedulerType.LOAD_BALANCE,
+            SocketType.SUB_CONNECT,
+            SocketType.PUSH_CONNECT,
+        ),
+        (
+            'any',
+            2,
+            SchedulerType.LOAD_BALANCE,
+            SocketType.SUB_CONNECT,
+            SocketType.PUSH_CONNECT,
+        ),
+    ),
+)
+def test_sockets(polling, parallel, pea_scheduling, pea_socket_in, pea_socket_out):
+    polling_type = PollingType.ALL if polling == 'all' else PollingType.ANY
+    args = set_pod_parser().parse_args(
+        [
+            '--name',
+            'pod',
+            '--parallel',
+            f'{parallel}',
+            '--polling',
+            f'{polling}',
+            '--replicas',
+            '3',
+        ]
+    )
+    with CompoundPod(args) as compound_pod:
+        head = compound_pod.head_args
+        assert head.socket_in == SocketType.ROUTER_BIND
+        assert head.socket_out == SocketType.ROUTER_BIND
+        assert head.scheduling == SchedulerType.LOAD_BALANCE
+        tail = compound_pod.tail_args
+        assert tail.socket_in == SocketType.PULL_BIND
+        assert tail.socket_out == SocketType.DEALER_CONNECT
+        assert tail.scheduling == SchedulerType.LOAD_BALANCE
+        replicas = compound_pod.replicas
+        for replica in replicas:
+            if parallel > 1:
+                assert len(replica.peas_args['peas']) == parallel
+                for pea in replica.peas_args['peas']:
+                    assert pea.polling == PollingType.ALL
+                    assert pea.socket_in == pea_socket_in
+                    assert pea.socket_out == pea_socket_out
+                    assert pea.scheduling == pea_scheduling
+            else:
+                assert len(replica.peas) == 1
+                assert replica.peas[0].args.polling == polling_type
+                assert replica.peas[0].args.socket_in == pea_socket_in
+                assert replica.peas[0].args.socket_out == pea_socket_out
+                assert replica.peas[0].args.scheduling == pea_scheduling

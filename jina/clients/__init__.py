@@ -1,245 +1,99 @@
 """Module wrapping the Client of Jina."""
-__copyright__ = "Copyright (c) 2020 Jina AI Limited. All rights reserved."
-__license__ = "Apache-2.0"
+import argparse
+from typing import overload, Optional, Union
 
-from typing import Union, List
+__all__ = ['Client']
 
-from . import request
-from .base import BaseClient, CallbackFnType, InputType, InputDeleteType
-from .helper import callback_exec
-from .request import GeneratorSourceType
-from .websocket import WebSocketClientMixin
-from ..enums import RequestType
-from ..helper import run_async, deprecated_alias
+from ..enums import GatewayProtocolType
+
+if False:
+    from .grpc import GRPCClient, AsyncGRPCClient
+    from .websocket import WebSocketClient, AsyncWebSocketClient
+    from .http import HTTPClient, AsyncHTTPClient
 
 
-class Client(BaseClient):
-    """A simple Python client for connecting to the gRPC gateway.
+# overload_inject_start_client
+@overload
+def Client(
+    asyncio: Optional[bool] = False,
+    host: Optional[str] = '0.0.0.0',
+    port_expose: Optional[int] = None,
+    protocol: Optional[str] = 'GRPC',
+    proxy: Optional[bool] = False,
+    **kwargs
+) -> Union[
+    'AsyncWebSocketClient',
+    'WebSocketClient',
+    'AsyncGRPCClient',
+    'GRPCClient',
+    'HTTPClient',
+    'AsyncHTTPClient',
+]:
+    """Create a Client. Client is how user interact with Flow
 
-    It manages the asyncio event loop internally, so all interfaces are synchronous from the outside.
+    :param asyncio: If set, then the input and output of this Client work in an asynchronous manner.
+    :param host: The host address of the runtime, by default it is 0.0.0.0.
+    :param port_expose: The port of the host exposed to the public
+    :param protocol: Communication protocol between server and client.
+    :param proxy: If set, respect the http_proxy and https_proxy environment variables. otherwise, it will unset these proxy variables before start. gRPC seems to prefer no proxy
+    :return: the new Client object
+
+    .. # noqa: DAR202
+    .. # noqa: DAR101
+    .. # noqa: DAR003
+    """
+    # overload_inject_end_client
+
+
+def Client(
+    args: Optional['argparse.Namespace'] = None, **kwargs
+) -> Union[
+    'AsyncWebSocketClient',
+    'WebSocketClient',
+    'AsyncGRPCClient',
+    'GRPCClient',
+    'HTTPClient',
+    'AsyncHTTPClient',
+]:
+    """Jina Python client.
+
+    :param args: Namespace args.
+    :param kwargs: Additional arguments.
+    :return: An instance of :class:`GRPCClient` or :class:`WebSocketClient`.
     """
 
-    async def _get_results(self, *args, **kwargs):
-        result = []
-        async for resp in super()._get_results(*args, **kwargs):
-            if self.args.return_results:
-                result.append(resp)
-
-        if self.args.return_results:
-            return result
-
-    @deprecated_alias(
-        input_fn=('inputs', 0),
-        buffer=('inputs', 1),
-        callback=('on_done', 1),
-        output_fn=('on_done', 1),
+    protocol = (
+        args.protocol if args else kwargs.get('protocol', GatewayProtocolType.GRPC)
     )
-    def train(
-        self,
-        inputs: InputType,
-        on_done: CallbackFnType = None,
-        on_error: CallbackFnType = None,
-        on_always: CallbackFnType = None,
-        **kwargs,
-    ) -> None:
-        """Issue 'train' request to the Flow.
+    if isinstance(protocol, str):
+        protocol = GatewayProtocolType.from_string(protocol)
 
-        :param inputs: input data which can be an Iterable, a function which returns an Iterable, or a single Document
-        :param on_done: the function to be called when the :class:`Request` object is resolved.
-        :param on_error: the function to be called when the :class:`Request` object is rejected.
-        :param on_always: the function to be called when the :class:`Request` object is  is either resolved or rejected.
-        :param kwargs: additional parameters
-        :return: None
-        """
-        self.mode = RequestType.TRAIN
-        return run_async(
-            self._get_results, inputs, on_done, on_error, on_always, **kwargs
-        )
+    is_async = (args and args.asyncio) or kwargs.get('asyncio', False)
 
-    @deprecated_alias(
-        input_fn=('inputs', 0),
-        buffer=('inputs', 1),
-        callback=('on_done', 1),
-        output_fn=('on_done', 1),
-    )
-    def search(
-        self,
-        inputs: InputType,
-        on_done: CallbackFnType = None,
-        on_error: CallbackFnType = None,
-        on_always: CallbackFnType = None,
-        **kwargs,
-    ) -> None:
-        """Issue 'search' request to the Flow.
+    if protocol == GatewayProtocolType.GRPC:
+        if is_async:
+            from .grpc import AsyncGRPCClient
 
-        :param inputs: input data which can be an Iterable, a function which returns an Iterable, or a single Document
-        :param on_done: the function to be called when the :class:`Request` object is resolved.
-        :param on_error: the function to be called when the :class:`Request` object is rejected.
-        :param on_always: the function to be called when the :class:`Request` object is  is either resolved or rejected.
-        :param kwargs: additional parameters
-        :return: None
-        """
-        self.mode = RequestType.SEARCH
-        self.add_default_kwargs(kwargs)
-        return run_async(
-            self._get_results, inputs, on_done, on_error, on_always, **kwargs
-        )
+            return AsyncGRPCClient(args, **kwargs)
+        else:
+            from .grpc import GRPCClient
 
-    @deprecated_alias(
-        input_fn=('inputs', 0),
-        buffer=('inputs', 1),
-        callback=('on_done', 1),
-        output_fn=('on_done', 1),
-    )
-    def index(
-        self,
-        inputs: InputType,
-        on_done: CallbackFnType = None,
-        on_error: CallbackFnType = None,
-        on_always: CallbackFnType = None,
-        **kwargs,
-    ) -> None:
-        """Issue 'index' request to the Flow.
+            return GRPCClient(args, **kwargs)
+    elif protocol == GatewayProtocolType.WEBSOCKET:
+        if is_async:
+            from .websocket import AsyncWebSocketClient
 
-        :param inputs: input data which can be an Iterable, a function which returns an Iterable, or a single Document
-        :param on_done: the function to be called when the :class:`Request` object is resolved.
-        :param on_error: the function to be called when the :class:`Request` object is rejected.
-        :param on_always: the function to be called when the :class:`Request` object is  is either resolved or rejected.
-        :param kwargs: additional parameters
-        :return: None
-        """
-        self.mode = RequestType.INDEX
-        return run_async(
-            self._get_results, inputs, on_done, on_error, on_always, **kwargs
-        )
+            return AsyncWebSocketClient(args, **kwargs)
+        else:
+            from .websocket import WebSocketClient
 
-    @deprecated_alias(
-        input_fn=('inputs', 0),
-        buffer=('inputs', 1),
-        callback=('on_done', 1),
-        output_fn=('on_done', 1),
-    )
-    def update(
-        self,
-        inputs: InputType,
-        on_done: CallbackFnType = None,
-        on_error: CallbackFnType = None,
-        on_always: CallbackFnType = None,
-        **kwargs,
-    ) -> None:
-        """Issue 'update' request to the Flow.
+            return WebSocketClient(args, **kwargs)
+    elif protocol == GatewayProtocolType.HTTP:
+        if is_async:
+            from .http import AsyncHTTPClient
 
-        :param inputs: input data which can be an Iterable, a function which returns an Iterable, or a single Document
-        :param on_done: the function to be called when the :class:`Request` object is resolved.
-        :param on_error: the function to be called when the :class:`Request` object is rejected.
-        :param on_always: the function to be called when the :class:`Request` object is  is either resolved or rejected.
-        :param kwargs: additional parameters
-        :return: None
-        """
-        self.mode = RequestType.UPDATE
-        return run_async(
-            self._get_results, inputs, on_done, on_error, on_always, **kwargs
-        )
+            return AsyncHTTPClient(args, **kwargs)
+        else:
+            from .http import HTTPClient
 
-    @deprecated_alias(
-        input_fn=('inputs', 0),
-        buffer=('inputs', 1),
-        callback=('on_done', 1),
-        output_fn=('on_done', 1),
-    )
-    def delete(
-        self,
-        inputs: InputDeleteType,
-        on_done: CallbackFnType = None,
-        on_error: CallbackFnType = None,
-        on_always: CallbackFnType = None,
-        **kwargs,
-    ) -> None:
-        """Issue 'update' request to the Flow.
-
-        :param inputs: input data which can be an Iterable, a function which returns an Iterable, or a single Document id.
-        :param on_done: the function to be called when the :class:`Request` object is resolved.
-        :param on_error: the function to be called when the :class:`Request` object is rejected.
-        :param on_always: the function to be called when the :class:`Request` object is  is either resolved or rejected.
-        :param kwargs: additional parameters
-        :return: None
-        """
-        self.mode = RequestType.DELETE
-        return run_async(
-            self._get_results, inputs, on_done, on_error, on_always, **kwargs
-        )
-
-    def reload(
-        self,
-        targets: Union[str, List[str]],
-        on_done: CallbackFnType = None,
-        on_error: CallbackFnType = None,
-        on_always: CallbackFnType = None,
-        **kwargs,
-    ):
-        """Send 'reload' request to the Flow.
-
-        :param targets: the regex string or list of regex strings to match the pea/pod names.
-        :param on_done: the function to be called when the :class:`Request` object is resolved.
-        :param on_error: the function to be called when the :class:`Request` object is rejected.
-        :param on_always: the function to be called when the :class:`Request` object is  is either resolved or rejected.
-        :param kwargs: additional parameters
-        :return: None
-        """
-
-        if isinstance(targets, str):
-            targets = [targets]
-        kwargs['targets'] = targets
-
-        self.mode = RequestType.CONTROL
-        return run_async(
-            self._get_results,
-            [],
-            on_done,
-            on_error,
-            on_always,
-            command='RELOAD',
-            **kwargs,
-        )
-
-
-class WebSocketClient(Client, WebSocketClientMixin):
-    """A Python Client to stream requests from a Flow with a REST Gateway.
-
-    :class:`WebSocketClient` shares the same interface as :class:`Client` and provides methods like
-    :meth:`index`, "meth:`search`, :meth:`train`, :meth:`update` & :meth:`delete`.
-
-    It is used by default while running operations when we create a `Flow` with `rest_api=True`
-
-    .. highlight:: python
-    .. code-block:: python
-
-        from jina.flow import Flow
-        f = Flow(rest_api=True).add().add()
-
-        with f:
-            f.index(['abc'])
-
-
-    :class:`WebSocketClient` can also be used to run operations for a remote Flow
-
-    .. highlight:: python
-    .. code-block:: python
-
-        # A Flow running on remote
-        from jina.flow import Flow
-        f = Flow(rest_api=True, port_expose=34567).add().add()
-
-        with f:
-            f.block()
-
-        # Local WebSocketClient running index & search
-        from jina.clients import WebSocketClient
-
-        client = WebSocketClient(...)
-        client.index(...)
-        client.search(...)
-
-
-    :class:`WebSocketClient` internally handles an event loop to run operations asynchronously.
-    """
+            return HTTPClient(args, **kwargs)

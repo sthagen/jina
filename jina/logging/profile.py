@@ -1,18 +1,11 @@
-__copyright__ = "Copyright (c) 2020 Jina AI Limited. All rights reserved."
-__license__ = "Apache-2.0"
-
 import sys
 import time
 from collections import defaultdict
 from functools import wraps
 from typing import Optional
 
-from ..importer import ImportExtensions
+from .logger import JinaLogger
 from ..helper import colored, get_readable_size, get_readable_time
-
-if False:
-    # fix type-hint complain for sphinx and flake
-    from ..logging import JinaLogger
 
 
 def used_memory(unit: int = 1024 * 1024 * 1024) -> float:
@@ -22,18 +15,9 @@ def used_memory(unit: int = 1024 * 1024 * 1024) -> float:
     :param unit: Unit of the memory, default in Gigabytes.
     :return: Memory usage of the current process.
     """
-    with ImportExtensions(required=False):
-        import resource
+    import resource
 
-        return resource.getrusage(resource.RUSAGE_SELF).ru_maxrss / unit
-
-    from . import default_logger
-
-    default_logger.error(
-        'module "resource" can not be found and you are likely running it on Windows, '
-        'i will return 0'
-    )
-    return 0
+    return resource.getrusage(resource.RUSAGE_SELF).ru_maxrss / unit
 
 
 def used_memory_readable() -> str:
@@ -60,7 +44,7 @@ def profiling(func):
     :param func: function to be profiled
     :return: arguments wrapper
     """
-    from . import default_logger
+    from .predefined import default_logger
 
     @wraps(func)
     def arg_wrapper(*args, **kwargs):
@@ -214,7 +198,6 @@ class ProgressBar(TimeContext):
         self,
         bar_len: int = 20,
         task_name: str = '',
-        batch_unit: str = 'requests',
         logger=None,
     ):
         """
@@ -222,14 +205,12 @@ class ProgressBar(TimeContext):
 
         :param bar_len: Total length of the bar.
         :param task_name: The name of the task, will be displayed in front of the bar.
-        :param batch_unit: Unit of batch
         :param logger: Jina logger
         """
         super().__init__(task_name, logger)
         self.bar_len = bar_len
         self.num_docs = 0
         self._ticks = 0
-        self.batch_unit = batch_unit
 
     def update_tick(self, tick: float = 0.1) -> None:
         """
@@ -259,36 +240,17 @@ class ProgressBar(TimeContext):
             self.num_docs += progress
 
         sys.stdout.write(
-            '{:>10} |{:<{}}| 📃 {:6d} ⏱️ {:3.1f}s 🐎 {:3.1f}/s {:6d} {:>10}'.format(
+            '⏳ {:>10} |{:<{}}| ⏱️ {:3.1f}s 🐎 {:3.1f} RPS'.format(
                 colored(self.task_name, 'cyan'),
                 colored('█' * num_bars, 'green'),
                 self.bar_len + 9,
-                self.num_docs,
                 elapsed,
-                self.num_docs / elapsed,
-                self.num_reqs,
-                self.batch_unit,
+                self.num_reqs / elapsed,
             )
         )
         if num_bars == self.bar_len:
             sys.stdout.write('\n')
         sys.stdout.flush()
-        from . import profile_logger
-
-        profile_logger.info(
-            {
-                'num_bars': num_bars,
-                'num_reqs': self.num_reqs,
-                'bar_len': self.bar_len,
-                'progress': num_bars / self.bar_len,
-                'task_name': self.task_name,
-                'qps': self.num_reqs / elapsed,
-                'speed': (self.num_docs if self.num_docs > 0 else self.num_reqs)
-                / elapsed,
-                'speed_unit': ('Documents' if self.num_docs > 0 else 'Requests'),
-                'elapsed': elapsed,
-            }
-        )
 
     def __enter__(self):
         super().__enter__()
@@ -301,10 +263,7 @@ class ProgressBar(TimeContext):
         pass
 
     def _exit_msg(self):
-        if self.num_docs > 0:
-            speed = self.num_docs / self.duration
-        else:
-            speed = self.num_reqs / self.duration
+        speed = self.num_reqs / self.duration
         sys.stdout.write(
-            f'\t{colored(f"✅ done in ⏱ {self.readable_duration} 🐎 {speed:3.1f}/s", "green")}\n'
+            f'{f"✅ {self.num_reqs} requests done in ⏱ {self.readable_duration} 🐎 {speed:3.1f} RPS"}\n'
         )

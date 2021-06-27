@@ -1,16 +1,16 @@
 import os
-
 from pathlib import Path
+
 import numpy as np
 import pytest
 
-from jina import Flow, AsyncFlow
+from jina import Executor
 from jina.excepts import BadFlowYAMLVersion
-from jina.executors.encoders import BaseEncoder
-from jina.flow import BaseFlow
+from jina import Flow
 from jina.jaml import JAML
 from jina.jaml.parsers import get_supported_versions
 from jina.parsers.flow import set_flow_parser
+from jina.types.document.generators import from_ndarray
 
 cur_dir = Path(__file__).parent
 
@@ -25,8 +25,6 @@ def test_load_flow_from_empty_yaml():
 
 def test_support_versions():
     assert get_supported_versions(Flow) == ['1', 'legacy']
-    assert get_supported_versions(AsyncFlow) == ['1', 'legacy']
-    assert get_supported_versions(BaseFlow) == ['1', 'legacy']
 
 
 def test_load_legacy_and_v1():
@@ -49,12 +47,12 @@ def test_add_needs_inspect(tmpdir):
         .needs(['pod0', 'pod1'])
     )
     with f1:
-        f1.index_ndarray(np.random.random([5, 5]), on_done=print)
+        f1.index(from_ndarray(np.random.random([5, 5])), on_done=print)
 
     f2 = Flow.load_config('yaml/flow-v1.0-syntax.yml')
 
     with f2:
-        f2.index_ndarray(np.random.random([5, 5]), on_done=print)
+        f2.index(from_ndarray(np.random.random([5, 5])), on_done=print)
 
     assert f1 == f2
 
@@ -109,7 +107,7 @@ def test_flow_yaml_from_string():
 
 
 def test_flow_uses_from_dict():
-    class DummyEncoder(BaseEncoder):
+    class DummyEncoder(Executor):
         pass
 
     d1 = {'jtype': 'DummyEncoder', 'metas': {'name': 'dummy1'}}

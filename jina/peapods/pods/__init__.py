@@ -1,26 +1,88 @@
-__copyright__ = "Copyright (c) 2020 Jina AI Limited. All rights reserved."
-__license__ = "Apache-2.0"
-
-
 import copy
+import sys
 from abc import abstractmethod
 from argparse import Namespace
 from contextlib import ExitStack
 from itertools import cycle
-from typing import Dict, Union, Set
-from typing import List, Optional
+from typing import Dict, Union, Set, List, Optional
 
-from jina.peapods.zmq import send_ctrl_message
-from jina.types.message.dump import DumpMessage
+from ..networking import get_connect_host
 from ..peas import BasePea
-from ... import __default_host__
+from ... import __default_executor__
 from ... import helper
-from ...enums import SchedulerType, PodRoleType
-from ...enums import SocketType, PeaRoleType, PollingType
-from ...helper import get_public_ip, get_internal_ip, random_identity
+from ...enums import (
+    SchedulerType,
+    PodRoleType,
+    SocketType,
+    PeaRoleType,
+    PollingType,
+)
+from ...helper import random_identity
+from ...jaml.helper import complete_path
 
 
-class BasePod(ExitStack):
+class ExitFIFO(ExitStack):
+    """
+    ExitFIFO changes the exiting order of exitStack to turn it into FIFO.
+
+    .. note::
+    The `__exit__` method is copied literally from `ExitStack` and changed the call:
+    `is_sync, cb = self._exit_callbacks.pop()` to `is_sync, cb = self._exit_callbacks.popleft()`
+
+    """
+
+    def __exit__(self, *exc_details):
+        received_exc = exc_details[0] is not None
+
+        # We manipulate the exception state so it behaves as though
+        # we were actually nesting multiple with statements
+        frame_exc = sys.exc_info()[1]
+
+        def _fix_exception_context(new_exc, old_exc):
+            # Context may not be correct, so find the end of the chain
+            while 1:
+                exc_context = new_exc.__context__
+                if exc_context is old_exc:
+                    # Context is already set correctly (see issue 20317)
+                    return
+                if exc_context is None or exc_context is frame_exc:
+                    break
+                new_exc = exc_context
+            # Change the end of the chain to point to the exception
+            # we expect it to reference
+            new_exc.__context__ = old_exc
+
+        # Callbacks are invoked in LIFO order to match the behaviour of
+        # nested context managers
+        suppressed_exc = False
+        pending_raise = False
+        while self._exit_callbacks:
+            is_sync, cb = self._exit_callbacks.popleft()
+            assert is_sync
+            try:
+                if cb(*exc_details):
+                    suppressed_exc = True
+                    pending_raise = False
+                    exc_details = (None, None, None)
+            except:
+                new_exc_details = sys.exc_info()
+                # simulate the stack of exceptions by setting the context
+                _fix_exception_context(new_exc_details[1], exc_details[1])
+                pending_raise = True
+                exc_details = new_exc_details
+        if pending_raise:
+            try:
+                # bare "raise exc_details[1]" replaces our carefully
+                # set-up context
+                fixed_ctx = exc_details[1].__context__
+                raise exc_details[1]
+            except BaseException:
+                exc_details[1].__context__ = fixed_ctx
+                raise
+        return received_exc and suppressed_exc
+
+
+class BasePod(ExitFIFO):
     """A BasePod is an immutable set of peas. They share the same input and output socket.
     Internally, the peas can run with the process/thread backend.
     They can be also run in their own containers on remote machines.
@@ -30,8 +92,8 @@ class BasePod(ExitStack):
         self, args: Union['Namespace', Dict], needs: Optional[Set[str]] = None
     ):
         super().__init__()
+        args.upload_files = BasePod._set_upload_files(args)
         self.args = args
-        self._set_conditional_args(self.args)
         self.needs = (
             needs if needs else set()
         )  #: used in the :class:`jina.flow.Flow` to build the graph
@@ -48,19 +110,46 @@ class BasePod(ExitStack):
             If one of the :class:`BasePea` fails to start, make sure that all of them
             are properly closed.
         """
-        raise NotImplemented()
+        raise NotImplementedError
 
     def close(self):
-        """Stop all :class:`BasePea` in this BasePod."""
+        """Stop all :class:`BasePea` in this BasePod.
+
+        .. # noqa: DAR201
+        """
         self.__exit__(None, None, None)
 
     @staticmethod
-    def _set_conditional_args(args):
-        if args.pod_role == PodRoleType.GATEWAY:
-            if args.restful:
-                args.runtime_cls = 'RESTRuntime'
-            else:
-                args.runtime_cls = 'GRPCRuntime'
+    def _set_upload_files(args):
+        # sets args.upload_files at the pod level so that peas inherit from it.
+        # all peas work under one remote workspace, hence important to have upload_files set for all
+
+        def valid_path(path):
+            try:
+                complete_path(path)
+                return True
+            except FileNotFoundError:
+                return False
+
+        _upload_files = set()
+        for param in ['uses', 'uses_before', 'uses_after']:
+            param_value = getattr(args, param, None)
+            if param_value and valid_path(param_value):
+                _upload_files.add(param_value)
+
+        if getattr(args, 'py_modules', None):
+            _upload_files.update(
+                {py_module for py_module in args.py_modules if valid_path(py_module)}
+            )
+        if getattr(args, 'upload_files', None):
+            _upload_files.update(
+                {
+                    upload_file
+                    for upload_file in args.upload_files
+                    if valid_path(upload_file)
+                }
+            )
+        return list(_upload_files)
 
     @property
     def role(self) -> 'PodRoleType':
@@ -80,44 +169,18 @@ class BasePod(ExitStack):
         return self.args.name
 
     @property
-    def host_in(self) -> str:
-        """Get the host_in of this pod
-
-
+    def head_host(self) -> str:
+        """Get the host of the HeadPea of this pod
         .. # noqa: DAR201
         """
-        return self.head_args.host_in
+        return self.head_args.host
 
     @property
-    def host_out(self) -> str:
-        """Get the host_out of this pod
-
-
+    def head_port_in(self):
+        """Get the port_in of the HeadPea of this pod
         .. # noqa: DAR201
         """
-        return self.tail_args.host_out
-
-    @property
-    def address_in(self) -> str:
-        """Get the full incoming address of this pod
-
-
-        .. # noqa: DAR201
-        """
-        return f'{self.head_args.host_in}:{self.head_args.port_in} ({self.head_args.socket_in!s})'
-
-    @property
-    def address_out(self) -> str:
-        """Get the full outgoing address of this pod
-
-
-        .. # noqa: DAR201
-        """
-        return f'{self.tail_args.host_out}:{self.tail_args.port_out} ({self.tail_args.socket_out!s})'
-
-    def _enter_pea(self, pea: 'BasePea') -> None:
-        self.peas.append(pea)
-        self.enter_context(pea)
+        return self.head_args.port_in
 
     def __enter__(self) -> 'BasePod':
         return self.start()
@@ -151,8 +214,11 @@ class BasePod(ExitStack):
                 _head_args.socket_out = SocketType.ROUTER_BIND
         else:
             _head_args.socket_out = SocketType.PUB_BIND
+
+        Pod._set_dynamic_routing_in(_head_args)
+
         if as_router:
-            _head_args.uses = args.uses_before or '_pass'
+            _head_args.uses = args.uses_before or __default_executor__
 
         if as_router:
             _head_args.pea_role = PeaRoleType.HEAD
@@ -187,7 +253,7 @@ class BasePod(ExitStack):
         _tail_args.uses = None
 
         if as_router:
-            _tail_args.uses = args.uses_after or '_pass'
+            _tail_args.uses = args.uses_after or __default_executor__
             if args.name:
                 _tail_args.name = f'{args.name}/tail'
             else:
@@ -195,69 +261,37 @@ class BasePod(ExitStack):
             _tail_args.pea_role = PeaRoleType.TAIL
             _tail_args.num_part = 1 if polling_type.is_push else args.parallel
 
+        Pod._set_dynamic_routing_out(_tail_args)
+
         return _tail_args
 
-    @staticmethod
-    def _fill_in_host(bind_args: Namespace, connect_args: Namespace) -> str:
-        """
-        Compute the host address for ``connect_args``
-
-        :param bind_args: configuration for the host ip binding
-        :param connect_args: configuration for the host ip connection
-        :return: host ip
-        """
-        from sys import platform
-
-        # by default __default_host__ is 0.0.0.0
-
-        # is BIND at local
-        bind_local = bind_args.host == __default_host__
-
-        # is CONNECT at local
-        conn_local = connect_args.host == __default_host__
-
-        # is CONNECT inside docker?
-        conn_docker = getattr(
-            connect_args, 'uses', None
-        ) is not None and connect_args.uses.startswith('docker://')
-
-        # is BIND & CONNECT all on the same remote?
-        bind_conn_same_remote = (
-            not bind_local and not conn_local and (bind_args.host == connect_args.host)
-        )
-
-        if platform in ('linux', 'linux2'):
-            local_host = __default_host__
-        else:
-            local_host = 'host.docker.internal'
-
-        # pod1 in local, pod2 in local (conn_docker if pod2 in docker)
-        if bind_local and conn_local:
-            return local_host if conn_docker else __default_host__
-
-        # pod1 and pod2 are remote but they are in the same host (pod2 is local w.r.t pod1)
-        if bind_conn_same_remote:
-            return local_host if conn_docker else __default_host__
-
-        # From here: Missing consideration of docker
-        if bind_local and not conn_local:
-            # in this case we are telling CONN (at remote) our local ip address
-            return get_public_ip() if bind_args.expose_public else get_internal_ip()
-        else:
-            # in this case we (at local) need to know about remote the BIND address
-            return bind_args.host
-
+    @property
     @abstractmethod
-    def head_args(self):
+    def head_args(self) -> Namespace:
         """Get the arguments for the `head` of this BasePod.
 
         .. # noqa: DAR201
         """
         ...
 
+    @property
     @abstractmethod
-    def tail_args(self):
+    def tail_args(self) -> Namespace:
         """Get the arguments for the `tail` of this BasePod.
+
+        .. # noqa: DAR201
+        """
+        ...
+
+    @abstractmethod
+    def join(self):
+        """Wait until all pods and peas exit."""
+        ...
+
+    @abstractmethod
+    def is_singleton(self) -> bool:
+        """Return if the Pod contains only a single Pea
+
 
         .. # noqa: DAR201
         """
@@ -281,6 +315,7 @@ class Pod(BasePod):
             self.peas_args = args
         else:
             self.peas_args = self._parse_args(args)
+        self._activated = False
 
     @property
     def is_singleton(self) -> bool:
@@ -325,7 +360,7 @@ class Pod(BasePod):
         return self._parse_base_pod_args(args)
 
     @property
-    def head_args(self):
+    def head_args(self) -> Namespace:
         """Get the arguments for the `head` of this Pod.
 
 
@@ -357,7 +392,7 @@ class Pod(BasePod):
             raise ValueError('ambiguous head node, maybe it is deducted already?')
 
     @property
-    def tail_args(self):
+    def tail_args(self) -> Namespace:
         """Get the arguments for the `tail` of this BasePod.
 
         .. # noqa: DAR201
@@ -399,6 +434,19 @@ class Pod(BasePod):
         )
 
     @property
+    def _fifo_args(self) -> List[Namespace]:
+        """Get all arguments of all Peas in this BasePod.
+        .. # noqa: DAR201
+        """
+        # For some reason, it seems that using `stack` and having `Head` started after the rest of Peas do not work and
+        # some messages are not received by the inner peas. That's why ExitFIFO is needed
+        return (
+            ([self.peas_args['head']] if self.peas_args['head'] else [])
+            + self.peas_args['peas']
+            + ([self.peas_args['tail']] if self.peas_args['tail'] else [])
+        )
+
+    @property
     def num_peas(self) -> int:
         """Get the number of running :class:`BasePea`
 
@@ -408,6 +456,17 @@ class Pod(BasePod):
 
     def __eq__(self, other: 'BasePod'):
         return self.num_peas == other.num_peas and self.name == other.name
+
+    def _enter_pea(self, pea: 'BasePea') -> None:
+        self.peas.append(pea)
+        self.enter_context(pea)
+
+    def _activate(self):
+        # order is good. Activate from tail to head
+        for pea in reversed(self.peas):
+            pea.activate_runtime()
+
+        self._activated = True
 
     def start(self) -> 'BasePod':
         """
@@ -420,15 +479,17 @@ class Pod(BasePod):
             are properly closed.
         """
         if getattr(self.args, 'noblock_on_start', False):
-            for _args in self.all_args:
+            for _args in self._fifo_args:
                 _args.noblock_on_start = True
                 self._enter_pea(BasePea(_args))
             # now rely on higher level to call `wait_start_success`
             return self
         else:
             try:
-                for _args in self.all_args:
+                for _args in self._fifo_args:
                     self._enter_pea(BasePea(_args))
+
+                self._activate()
             except:
                 self.close()
                 raise
@@ -448,6 +509,7 @@ class Pod(BasePod):
         try:
             for p in self.peas:
                 p.wait_start_success()
+            self._activate()
         except:
             self.close()
             raise
@@ -457,10 +519,12 @@ class Pod(BasePod):
         try:
             for p in self.peas:
                 p.join()
+                self._activated = False
         except KeyboardInterrupt:
             pass
         finally:
             self.peas.clear()
+            self._activated = False
 
     @property
     def is_ready(self) -> bool:
@@ -472,29 +536,7 @@ class Pod(BasePod):
 
         .. # noqa: DAR201
         """
-        return all(p.is_ready.is_set() for p in self.peas)
-
-    def _set_after_to_pass(self, args):
-        # TODO: check if needed
-        # remark 1: i think it's related to route driver.
-        if hasattr(args, 'polling') and args.polling.is_push:
-            # ONLY reset when it is push
-            args.uses_after = '_pass'
-
-    def dump(self, path, shards, timeout):
-        """Emit a Dump request to its Peas
-
-        :param shards: the nr of shards in the dump
-        :param path: the path to which to dump
-        :param timeout: time to wait (seconds)
-        """
-        for pea in self.peas:
-            if 'head' not in pea.name and 'tail' not in pea.name:
-                send_ctrl_message(
-                    pea.runtime.ctrl_addr,
-                    DumpMessage(path=path, shards=shards),
-                    timeout=timeout,
-                )
+        return all(p.is_ready.is_set() for p in self.peas) and self._activated
 
     @staticmethod
     def _set_peas_args(
@@ -518,10 +560,11 @@ class Pod(BasePod):
             if args.parallel > 1:
                 _args.pea_role = PeaRoleType.PARALLEL
                 _args.identity = random_identity()
+
                 if _args.peas_hosts:
                     _args.host = pea_host
                 if _args.name:
-                    _args.name += f'/{idx}'
+                    _args.name += f'/pea-{idx}'
                 else:
                     _args.name = f'{idx}'
             else:
@@ -546,23 +589,69 @@ class Pod(BasePod):
             else:
                 _args.socket_in = SocketType.SUB_CONNECT
             if head_args:
-                _args.host_in = BasePod._fill_in_host(
-                    bind_args=head_args, connect_args=_args
+                _args.host_in = get_connect_host(
+                    bind_host=head_args.host,
+                    bind_expose_public=head_args.expose_public,
+                    connect_args=_args,
                 )
+            else:
+                Pod._set_dynamic_routing_in(_args)
             if tail_args:
-                _args.host_out = BasePod._fill_in_host(
-                    bind_args=tail_args, connect_args=_args
+                _args.host_out = get_connect_host(
+                    bind_host=tail_args.host,
+                    bind_expose_public=tail_args.expose_public,
+                    connect_args=_args,
                 )
+            else:
+                Pod._set_dynamic_routing_out(_args)
 
+            # pea workspace if not set then derive from workspace
+            if not _args.workspace:
+                _args.workspace = args.workspace
             result.append(_args)
         return result
 
     def _parse_base_pod_args(self, args):
+
+        if getattr(args, 'uses', None):
+            # use the executor existed in Jina Hub.
+            from ...hubble.helper import parse_hub_uri
+
+            scheme, name, tag, secret = parse_hub_uri(self.args.uses)
+
+            if scheme.startswith('jinahub'):
+                from ...hubble.hubio import HubIO
+                from ...parsers.hubble import set_hub_pull_parser
+
+                if not name:
+                    raise ValueError(
+                        f'The given executor URI {self.args.uses} is not valid, please double check it!'
+                    )
+
+                pull_args = set_hub_pull_parser().parse_args([self.args.uses])
+                hubio = HubIO(pull_args)
+
+                executor = hubio.fetch(name, tag=tag, secret=secret)
+                uuid = executor.uuid
+
+                if scheme == 'jinahub+docker':
+                    # use docker image
+                    args.uses = f'docker://{executor.image_name}'
+                elif scheme == 'jinahub':
+                    from ...hubble.hubapi import resolve_local
+
+                    pkg_path = resolve_local(uuid, tag or executor.tag)
+                    if not pkg_path:
+                        hubio.pull()
+                        pkg_path = resolve_local(uuid, tag or executor.tag)
+                    args.uses = f'{pkg_path / "config.yml"}'
+                else:
+                    raise ValueError(f'Unknown schema: {scheme}')
+
         parsed_args = {'head': None, 'tail': None, 'peas': []}
         if getattr(args, 'parallel', 1) > 1:
             # reasons to separate head and tail from peas is that they
             # can be deducted based on the previous and next pods
-            self._set_after_to_pass(args)
             self.is_head_router = True
             self.is_tail_router = True
             parsed_args['head'] = BasePod._copy_to_head_args(args, args.polling)
@@ -572,8 +661,12 @@ class Pod(BasePod):
                 head_args=parsed_args['head'],
                 tail_args=parsed_args['tail'],
             )
-        elif (getattr(args, 'uses_before', None) and args.uses_before != '_pass') or (
-            getattr(args, 'uses_after', None) and args.uses_after != '_pass'
+        elif (
+            getattr(args, 'uses_before', None)
+            and args.uses_before != __default_executor__
+        ) or (
+            getattr(args, 'uses_after', None)
+            and args.uses_after != __default_executor__
         ):
             args.scheduling = SchedulerType.ROUND_ROBIN
             if getattr(args, 'uses_before', None):
@@ -590,7 +683,21 @@ class Pod(BasePod):
         else:
             self.is_head_router = False
             self.is_tail_router = False
+            Pod._set_dynamic_routing_in(args)
+            Pod._set_dynamic_routing_out(args)
             parsed_args['peas'] = [args]
 
         # note that peas_args['peas'][0] exist either way and carries the original property
         return parsed_args
+
+    @staticmethod
+    def _set_dynamic_routing_in(args):
+        if args.dynamic_routing:
+            args.dynamic_routing_in = True
+            args.socket_in = SocketType.ROUTER_BIND
+
+    @staticmethod
+    def _set_dynamic_routing_out(args):
+        if args.dynamic_routing:
+            args.dynamic_routing_out = True
+            args.socket_out = SocketType.DEALER_CONNECT

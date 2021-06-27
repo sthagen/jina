@@ -1,8 +1,8 @@
-from jina.executors.crafters import BaseCrafter
+from jina import Executor
 from .helper import helper_function
 
 
-class CustomCrafter1(BaseCrafter):
+class BadCrafter1(Executor):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         print(helper_function)

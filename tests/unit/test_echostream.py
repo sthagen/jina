@@ -1,6 +1,6 @@
 import logging
 
-from jina.flow import Flow
+from jina import Flow
 from jina.parsers import set_pea_parser
 from jina.peapods.peas import BasePea
 from jina.peapods.zmq import Zmqlet
@@ -40,8 +40,6 @@ def test_simple_zmqlet():
             'PULL_BIND',
             '--socket-out',
             'PUSH_BIND',
-            '--uses',
-            '_logforward',
             '--timeout-ctrl',
             '-1',
         ]
@@ -51,7 +49,7 @@ def test_simple_zmqlet():
     with BasePea(args2), Zmqlet(args, logger) as z:
         req = jina_pb2.RequestProto()
         req.request_id = random_identity()
-        d = req.index.docs.add()
+        d = req.data.docs.add()
         d.tags['id'] = 2
         msg = Message(None, req, 'tmp', '')
         z.send_message(msg)

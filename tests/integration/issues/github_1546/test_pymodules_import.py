@@ -23,7 +23,7 @@ def test_import_with_abs_namespace_should_pass():
     """
 
     b = BaseExecutor.load_config('good1/crafter.yml')
-    assert b.__class__.__name__ == 'CustomCrafter3'
+    assert b.__class__.__name__ == 'GoodCrafter1'
 
 
 def test_import_with_module_structure_should_pass():
@@ -47,7 +47,7 @@ def test_import_with_module_structure_should_pass():
                        |- __init__.py
     """
     b = BaseExecutor.load_config('good2/crafter.yml')
-    assert b.__class__.__name__ == 'CustomCrafter4'
+    assert b.__class__.__name__ == 'GoodCrafter2'
 
 
 def test_import_with_hub_structure_should_pass():
@@ -67,7 +67,7 @@ def test_import_with_hub_structure_should_pass():
     :return:
     """
     b = BaseExecutor.load_config('good3/config.yml')
-    assert b.__class__.__name__ == 'FiveImageCropper2'
+    assert b.__class__.__name__ == 'GoodCrafter3'
 
 
 def test_import_casual_structure_should_fail():
@@ -75,11 +75,3 @@ def test_import_casual_structure_should_fail():
     # https://github.com/jina-ai/jina/issues/1546#issuecomment-751481422
     with pytest.raises(ImportError):
         BaseExecutor.load_config('bad1/crafter.yml')
-
-
-def test_import_good_structure_but_wrong_import_order_should_fail():
-    # this structure is a copy paste of "test_import_with_module_structure_should_pass" but with wrong import order
-    # if A depends on B, i.e. in A.py you write "import B"
-    # then B.py should be put in front of A.py in py_modules, otherwise it will fail
-    with pytest.raises(ImportError):
-        BaseExecutor.load_config('bad2/crafter.yml')

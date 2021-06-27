@@ -4,24 +4,20 @@ import sys
 import time
 import warnings
 from pathlib import Path
+from platform import uname
 
 from ..zmq.base import ZMQRuntime
 from ...zmq import Zmqlet
 from ....excepts import BadImageNameError
-from ....helper import ArgNamespace, is_valid_local_config_source, slugify
-from ....jaml.helper import complete_path
-from ....docker.hubio import HubIO
+from ....helper import ArgNamespace, slugify
 
 
 class ContainerRuntime(ZMQRuntime):
     """Runtime procedure for container."""
 
-    def __init__(self, args: 'argparse.Namespace'):
-        super().__init__(args)
+    def __init__(self, args: 'argparse.Namespace', ctrl_addr: str):
+        super().__init__(args, ctrl_addr)
         self._set_network_for_dind_linux()
-
-    def setup(self):
-        """Run the container."""
         self._docker_run()
         while self._is_container_alive and not self.is_ready:
             time.sleep(1)
@@ -56,7 +52,9 @@ class ContainerRuntime(ZMQRuntime):
         # Related to potential docker-in-docker communication. If `ContainerPea` lives already inside a container.
         # it will need to communicate using the `bridge` network.
         self._net_mode = None
-        if sys.platform in ('linux', 'linux2'):
+
+        # In WSL, we need to set ports explicitly
+        if sys.platform in ('linux', 'linux2') and 'microsoft' not in uname().release:
             self._net_mode = 'host'
             try:
                 bridge_network = client.networks.get('bridge')
@@ -82,7 +80,6 @@ class ContainerRuntime(ZMQRuntime):
 
         if self.args.uses.startswith('docker://'):
             uses_img = self.args.uses.replace('docker://', '')
-            uses_img = HubIO._alias_to_docker_image_name(uses_img)
             self.logger.info(f'will use Docker image: {uses_img}')
         else:
             warnings.warn(
@@ -136,21 +133,6 @@ class ContainerRuntime(ZMQRuntime):
             )
 
         _volumes = {}
-        if self.args.uses_internal:
-            full_path = None
-            try:
-                full_path = complete_path(self.args.uses_internal)
-            except FileNotFoundError:
-                pass
-            if full_path and os.path.exists(full_path):
-                # external YAML config, need to be volumed into the container
-                # uses takes value from uses_internal
-                non_defaults['uses'] = '/' + os.path.basename(full_path)
-                _volumes[full_path] = {'bind': non_defaults['uses'], 'mode': 'ro'}
-            elif not is_valid_local_config_source(self.args.uses_internal):
-                raise FileNotFoundError(
-                    f'"uses_internal" {self.args.uses_internal} is not like a path, please check it'
-                )
         if self.args.volumes:
             for p in self.args.volumes:
                 paths = p.split(':')

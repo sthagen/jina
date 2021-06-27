@@ -1,5 +1,7 @@
-__copyright__ = "Copyright (c) 2020 Jina AI Limited. All rights reserved."
-__license__ = "Apache-2.0"
+import argparse
+
+from jina.parsers.client import mixin_comm_protocol_parser
+from .helper import _SHOW_ALL_ARGS
 
 
 def set_pea_parser(parser=None):
@@ -66,15 +68,21 @@ def set_gateway_parser(parser=None):
     from .peapods.base import mixin_base_ppr_parser
     from .peapods.runtimes.zmq import mixin_zmq_runtime_parser
     from .peapods.runtimes.zed import mixin_zed_runtime_parser
-    from .peapods.runtimes.container import mixin_container_runtime_parser
-    from .peapods.runtimes.remote import mixin_remote_parser
-    from .peapods.runtimes.remote import mixin_grpc_parser
+    from .peapods.runtimes.remote import (
+        mixin_remote_parser,
+        mixin_prefetch_parser,
+        mixin_http_gateway_parser,
+        mixin_compressor_parser,
+    )
     from .peapods.pea import mixin_pea_parser
 
     mixin_base_ppr_parser(parser)
     mixin_zmq_runtime_parser(parser)
     mixin_zed_runtime_parser(parser)
-    mixin_grpc_parser(parser)
+    mixin_prefetch_parser(parser)
+    mixin_http_gateway_parser(parser)
+    mixin_compressor_parser(parser)
+    mixin_comm_protocol_parser(parser)
     mixin_remote_parser(parser)
     mixin_pea_parser(parser)
 
@@ -85,10 +93,16 @@ def set_gateway_parser(parser=None):
         socket_in=SocketType.PULL_CONNECT,  # otherwise there can be only one client at a time
         socket_out=SocketType.PUSH_CONNECT,
         ctrl_with_ipc=True,  # otherwise ctrl port would be conflicted
-        read_only=True,
         runtime_cls='GRPCRuntime',
         pod_role=PodRoleType.GATEWAY,
     )
+
+    parser.add_argument(
+        '--routing-table',
+        type=str,
+        help='Routing graph for the gateway' if _SHOW_ALL_ARGS else argparse.SUPPRESS,
+    )
+
     return parser
 
 
@@ -103,12 +117,12 @@ def set_client_cli_parser(parser=None):
 
         parser = set_base_parser()
 
-    from .peapods.runtimes.remote import mixin_grpc_parser, mixin_remote_parser
-    from .client import mixin_client_cli_parser
+    from .peapods.runtimes.remote import mixin_remote_parser
+    from .client import mixin_client_features_parser, mixin_comm_protocol_parser
 
-    mixin_client_cli_parser(parser)
-    mixin_grpc_parser(parser)
     mixin_remote_parser(parser)
+    mixin_client_features_parser(parser)
+    mixin_comm_protocol_parser(parser)
 
     return parser
 
@@ -119,39 +133,45 @@ def get_main_parser():
     :return: the parser
     """
     from .base import set_base_parser
-    from .helloworld import set_hw_parser, set_hello_parser
+    from .helloworld import set_hello_parser
     from .helper import _chf, _SHOW_ALL_ARGS
-    from .check import set_check_parser
+
     from .export_api import set_export_api_parser
     from .flow import set_flow_parser
-    from .hub import set_hub_parser
     from .ping import set_ping_parser
-    from .optimizer import set_optimizer_parser
+
+    from .hubble import set_hub_parser
+
+    # from .optimizer import set_optimizer_parser
 
     # create the top-level parser
     parser = set_base_parser()
 
     sp = parser.add_subparsers(
         dest='cli',
-        description='use `%(prog)-8s [sub-command] --help` '
-        'to get detailed information about each sub-command',
+        description='''
+        Use `%(prog)-8s [sub-command] --help` to get detailed information about each sub-command.
+
+        To show all commands, run `JINA_FULL_CLI=1 jina --help`.
+        ''',
         required=True,
     )
 
     set_hello_parser(
         sp.add_parser(
             'hello',
-            help='👋 Hello World! Hello Jina!',
-            description='Start hello-world demos',
+            help='👋 Hello Jina!',
+            description='Start hello world demos.',
             formatter_class=_chf,
         )
     )
 
     set_pod_parser(
         sp.add_parser(
-            'pod',
-            help='Start a Pod',
-            description='Start a Jina Pod',
+            'executor',
+            aliases=['pod'],
+            help='Start an Executor',
+            description='Start an Executor. Executor is how Jina processes Document.',
             formatter_class=_chf,
         )
     )
@@ -159,17 +179,17 @@ def get_main_parser():
     set_flow_parser(
         sp.add_parser(
             'flow',
-            description='Start a Flow that orchestrates multiple pods',
+            description='Start a Flow. Flow is how Jina streamlines and distributes Executors.',
             help='Start a Flow',
             formatter_class=_chf,
         )
     )
 
-    set_optimizer_parser(
+    set_ping_parser(
         sp.add_parser(
-            'optimizer',
-            description='Start a FlowOptimizer from a YAML configuration file',
-            help='Start an FlowOptimizer from a YAML file',
+            'ping',
+            help='Ping an Executor',
+            description='Ping a Pod and check its network connectivity.',
             formatter_class=_chf,
         )
     )
@@ -178,25 +198,7 @@ def get_main_parser():
         sp.add_parser(
             'gateway',
             description='Start a Gateway that receives client Requests via gRPC/REST interface',
-            help='Start a Gateway',
-            formatter_class=_chf,
-        )
-    )
-
-    set_ping_parser(
-        sp.add_parser(
-            'ping',
-            help='Ping a pod and check its connectivity',
-            description='Ping a remote pod and check the network connectivity',
-            formatter_class=_chf,
-        )
-    )
-
-    set_check_parser(
-        sp.add_parser(
-            'check',
-            help='Check the import of all Executors and Drivers',
-            description='Check the import status of all executors and drivers',
+            **(dict(help='Start a Gateway')) if _SHOW_ALL_ARGS else {},
             formatter_class=_chf,
         )
     )
@@ -204,8 +206,8 @@ def get_main_parser():
     set_hub_parser(
         sp.add_parser(
             'hub',
-            help='Build, push, pull Jina Hub images',
-            description='Build, push, pull Jina Hub images',
+            help='Push/pull an Executor to/from Jina Hub',
+            description='Push/Pull an Executor to/from Jina Hub',
             formatter_class=_chf,
         )
     )
@@ -215,11 +217,11 @@ def get_main_parser():
     set_pea_parser(
         sp.add_parser(
             'pea',
-            description='Start a Jina pea. '
+            description='Start a Pea. '
             'You should rarely use this directly unless you '
             'are doing low-level orchestration',
             formatter_class=_chf,
-            **(dict(help='start a pea')) if _SHOW_ALL_ARGS else {}
+            **(dict(help='Start a Pea')) if _SHOW_ALL_ARGS else {},
         )
     )
 
@@ -228,7 +230,7 @@ def get_main_parser():
             'client',
             description='Start a Python client that connects to a remote Jina gateway',
             formatter_class=_chf,
-            **(dict(help='start a client')) if _SHOW_ALL_ARGS else {}
+            **(dict(help='Start a Client')) if _SHOW_ALL_ARGS else {},
         )
     )
 
@@ -237,17 +239,7 @@ def get_main_parser():
             'export-api',
             description='Export Jina API to JSON/YAML file for 3rd party applications',
             formatter_class=_chf,
-            **(dict(help='export Jina API to file')) if _SHOW_ALL_ARGS else {}
-        )
-    )
-
-    set_hw_parser(
-        sp.add_parser(
-            'hello-world',
-            description='Start the hello-world demo, a simple end2end image index and search demo '
-            'without any extra dependencies.',
-            formatter_class=_chf,
-            **(dict(help='👋 Hello World! Hello Jina!')) if _SHOW_ALL_ARGS else {}
+            **(dict(help='Export Jina API to file')) if _SHOW_ALL_ARGS else {},
         )
     )
 

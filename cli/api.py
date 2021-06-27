@@ -1,6 +1,3 @@
-__copyright__ = "Copyright (c) 2020 Jina AI Limited. All rights reserved."
-__license__ = "Apache-2.0"
-
 if False:
     from argparse import Namespace
 
@@ -35,6 +32,10 @@ def pea(args: 'Namespace'):
         pass
 
 
+# alias
+executor = pea
+
+
 def gateway(args: 'Namespace'):
     """
     Start a Gateway Pod
@@ -42,17 +43,6 @@ def gateway(args: 'Namespace'):
     :param args: arguments coming from the CLI.
     """
     pod(args)
-
-
-def check(args: 'Namespace'):
-    """
-    Check jina config, settings, imports, network etc
-
-    :param args: arguments coming from the CLI.
-    """
-    from jina.checker import ImportChecker
-
-    ImportChecker(args)
 
 
 def ping(args: 'Namespace'):
@@ -87,7 +77,7 @@ def export_api(args: 'Namespace'):
     from .export import api_to_dict
     from jina.jaml import JAML
     from jina import __version__
-    from jina.logging import default_logger
+    from jina.logging.predefined import default_logger
     from jina.schemas import get_full_schema
 
     if args.yaml_path:
@@ -115,17 +105,6 @@ def export_api(args: 'Namespace'):
             default_logger.info(f'API is exported to {f_name}')
 
 
-def hello_world(args: 'Namespace'):
-    """
-    Run the fashion hello world example
-
-    :param args: arguments coming from the CLI.
-    """
-    from jina.helloworld.fashion import hello_world
-
-    hello_world(args)
-
-
 def hello(args: 'Namespace'):
     """
     Run any of the hello world examples
@@ -133,15 +112,23 @@ def hello(args: 'Namespace'):
     :param args: arguments coming from the CLI.
     """
     if args.hello == 'fashion':
-        from jina.helloworld.fashion import hello_world
-    elif args.hello == 'chatbot':
-        from jina.helloworld.chatbot import hello_world
-    elif args.hello == 'multimodal':
-        from jina.helloworld.multimodal import hello_world
-    else:
-        raise ValueError(f'must be one of [`fashion`, `chatbot`, `multimodal`]')
+        from jina.helloworld.fashion.app import hello_world
 
-    hello_world(args)
+        hello_world(args)
+    elif args.hello == 'chatbot':
+        from jina.helloworld.chatbot.app import hello_world
+
+        hello_world(args)
+    elif args.hello == 'multimodal':
+        from jina.helloworld.multimodal.app import hello_world
+
+        hello_world(args)
+    elif args.hello == 'fork':
+        from jina.helloworld.fork import fork_hello
+
+        fork_hello(args)
+    else:
+        raise ValueError(f'must be one of [`fashion`, `chatbot`, `multimodal`, `fork`]')
 
 
 def flow(args: 'Namespace'):
@@ -150,16 +137,14 @@ def flow(args: 'Namespace'):
 
     :param args: arguments coming from the CLI.
     """
-    from jina.flow import Flow
+    from jina import Flow
 
     if args.uses:
         f = Flow.load_config(args.uses)
         with f:
             f.block()
     else:
-        from jina.logging import default_logger
-
-        default_logger.critical('start a flow from CLI requires a valid "--uses"')
+        raise ValueError('start a flow from CLI requires a valid `--uses`')
 
 
 def optimizer(args: 'Namespace'):
@@ -175,10 +160,9 @@ def optimizer(args: 'Namespace'):
 
 def hub(args: 'Namespace'):
     """
-    Start a hub builder for build, push, pull
-
+    Start a hub builder for push, pull
     :param args: arguments coming from the CLI.
     """
-    from jina.docker.hubio import HubIO
+    from jina.hubble.hubio import HubIO
 
     getattr(HubIO(args), args.hub)()

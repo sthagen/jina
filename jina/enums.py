@@ -16,10 +16,7 @@ To use these enums in YAML config, following the example below:
         parallel_type: any
 """
 
-__copyright__ = "Copyright (c) 2020 Jina AI Limited. All rights reserved."
-__license__ = "Apache-2.0"
-
-from enum import IntEnum, EnumMeta
+from enum import Enum, IntEnum, EnumMeta
 
 
 class EnumType(EnumMeta):
@@ -211,15 +208,6 @@ class SocketType(BetterEnum):
         }[self]
 
 
-class FlowOutputType(BetterEnum):
-    """The enum for representing flow output config."""
-
-    SHELL_PROC = 0  #: a shell-script, run each microservice as a process
-    SHELL_DOCKER = 1  #: a shell-script, run each microservice as a container
-    DOCKER_SWARM = 2  #: a docker-swarm YAML config
-    K8S = 3  #: a Kubernetes YAML config
-
-
 class FlowBuildLevel(BetterEnum):
     """
     The enum for representing a flow's build level.
@@ -229,6 +217,17 @@ class FlowBuildLevel(BetterEnum):
 
     EMPTY = 0  #: Nothing is built
     GRAPH = 1  #: The underlying graph is built, you may visualize the flow
+    RUNNING = 2  #: the graph is started and all pods are running
+
+
+class GatewayProtocolType(BetterEnum):
+    """
+    Gateway communication protocol
+    """
+
+    GRPC = 0
+    HTTP = 1
+    WEBSOCKET = 2
 
 
 class PeaRoleType(BetterEnum):
@@ -263,14 +262,8 @@ class PodRoleType(BetterEnum):
 class RequestType(BetterEnum):
     """The enum of Client mode."""
 
-    INDEX = 0
-    SEARCH = 1
-    DELETE = 2
-    UPDATE = 3
-    CONTROL = 4
-    TRAIN = 5
-    # TODO make Dump a control request to be passed to the Pod directly
-    DUMP = 6
+    DATA = 0
+    CONTROL = 1
 
 
 class CompressAlgo(BetterEnum):
@@ -307,9 +300,8 @@ class OnErrorStrategy(BetterEnum):
     IGNORE = (
         0  #: Ignore it, keep running all Drivers & Executors logics in the sequel flow
     )
-    SKIP_EXECUTOR = 1  #: Skip all Executors in the sequel, but drivers are still called
-    SKIP_HANDLE = 2  #: Skip all Drivers & Executors in the sequel, only `pre_hook` and `post_hook` are called
-    THROW_EARLY = 3  #: Immediately throw the exception, the sequel flow will not be running at all
+    SKIP_HANDLE = 1  #: Skip all Executors in the sequel, only `pre_hook` and `post_hook` are called
+    THROW_EARLY = 2  #: Immediately throw the exception, the sequel flow will not be running at all
 
 
 class FlowInspectType(BetterEnum):
@@ -435,6 +427,17 @@ class EmbeddingClsType(BetterEnum):
         :return: True is class is stackable
         """
         return self.value in [1, 2]
+
+
+class RemoteWorkspaceState(str, Enum):
+    """Enum representing state of remote workspace created by JinaD"""
+
+    PENDING = 'PENDING'
+    CREATING = 'CREATING'
+    UPDATING = 'UPDATING'
+    ACTIVE = 'ACTIVE'
+    FAILED = 'FAILED'
+    DELETING = 'DELETING'
 
 
 def replace_enum_to_str(obj):

@@ -108,9 +108,7 @@ def parse_config_source(
     path: Union[str, TextIO, Dict],
     allow_stream: bool = True,
     allow_yaml_file: bool = True,
-    allow_builtin_resource: bool = True,
     allow_raw_yaml_content: bool = True,
-    allow_raw_driver_yaml_content: bool = True,
     allow_class_type: bool = True,
     allow_dict: bool = True,
     allow_json: bool = True,
@@ -124,9 +122,7 @@ def parse_config_source(
     :param path: the multi-kind source of the configs.
     :param allow_stream: flag
     :param allow_yaml_file: flag
-    :param allow_builtin_resource: flag
     :param allow_raw_yaml_content: flag
-    :param allow_raw_driver_yaml_content: flag
     :param allow_class_type: flag
     :param allow_dict: flag
     :param allow_json: flag
@@ -136,7 +132,6 @@ def parse_config_source(
             if available.
     """
     import io
-    from pkg_resources import resource_filename
 
     if not path:
         raise BadConfigSource
@@ -151,42 +146,9 @@ def parse_config_source(
     elif allow_yaml_file and is_yaml_filepath(path):
         comp_path = complete_path(path)
         return open(comp_path, encoding='utf8'), comp_path
-    elif (
-        allow_builtin_resource
-        and path.lstrip().startswith('_')
-        and os.path.exists(
-            resource_filename('jina', '/'.join(('resources', f'executors.{path}.yml')))
-        )
-    ):
-        # NOTE: this returns a binary stream
-        comp_path = resource_filename(
-            'jina', '/'.join(('resources', f'executors.{path}.yml'))
-        )
-        return open(comp_path, encoding='utf8'), comp_path
     elif allow_raw_yaml_content and path.lstrip().startswith(('!', 'jtype')):
         # possible YAML content
         path = path.replace('|', '\n    with: ')
-        return io.StringIO(path), None
-    elif allow_raw_driver_yaml_content and path.lstrip().startswith(('- !', '- jtype')):
-        # possible driver YAML content, right now it is only used for debugging
-        with open(
-            resource_filename(
-                'jina',
-                '/'.join(
-                    (
-                        'resources',
-                        'executors.base.all.yml'
-                        if path.lstrip().startswith('- !!')
-                        else 'executors.base.yml',
-                    )
-                ),
-            )
-        ) as fp:
-            _defaults = fp.read()
-        path = path.replace('- !!', '- !').replace(
-            '|', '\n        with: '
-        )  # for indent, I know, its nasty
-        path = _defaults.replace('*', path)
         return io.StringIO(path), None
     elif allow_class_type and path.isidentifier():
         # possible class name

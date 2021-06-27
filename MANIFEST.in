@@ -1,4 +1,7 @@
 recursive-include jina/resources *
+recursive-include jina/helloworld *
+recursive-include daemon/Dockerfiles *
 include extra-requirements.txt
+include fastentrypoints.py
 prune tests/
 prune **/tests/

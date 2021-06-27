@@ -3,7 +3,6 @@ import re
 from copy import copy
 from logging import Formatter
 
-from .profile import used_memory
 from ..helper import colored
 
 if False:
@@ -96,6 +95,8 @@ class ProfileFormatter(Formatter):
         :param record: A LogRecord object.
         :return:: Return JSON formatted log if msg of LogRecord is dict type else return empty.
         """
+        from .profile import used_memory
+
         cr = copy(record)
         if isinstance(cr.msg, dict):
             cr.msg.update(

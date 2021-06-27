@@ -19,6 +19,18 @@ elif sys.version_info >= (3, 8, 0):
 elif sys.version_info >= (3, 7, 0):
     py_tag = PY37
 
+if (3, 7, 0) <= sys.version_info < (3, 8, 0):
+    # https://github.com/pypa/setuptools/issues/926#issuecomment-294369342
+    try:
+        import fastentrypoints
+    except ImportError:
+        from setuptools.command import easy_install
+        import pkg_resources
+
+        easy_install.main(['fastentrypoints'])
+        pkg_resources.require('fastentrypoints')
+        import fastentrypoint
+
 try:
     pkg_name = 'jina'
     libinfo_py = path.join(pkg_name, '__init__.py')
@@ -122,11 +134,11 @@ setup(
     packages=find_packages(),
     version=__version__,
     include_package_data=True,
-    description='Jina is the cloud-native neural search solution powered by the state-of-the-art AI and deep learning',
+    description='Jina is geared towards building search-as-a-service systems for any kind of data in just minutes.',
     author='Jina Dev Team',
     author_email='dev-team@jina.ai',
     license='Apache 2.0',
-    url='https://opensource.jina.ai',
+    url='https://github.com/jina-ai/jina/',
     download_url='https://github.com/jina-ai/jina/tags',
     long_description=_long_description,
     long_description_content_type='text/markdown',
@@ -137,7 +149,10 @@ setup(
     install_requires=list(all_deps['core'].union(all_deps['perf'])),
     extras_require=all_deps,
     entry_points={
-        'console_scripts': ['jina=cli:main', 'jinad=daemon:main'],
+        'console_scripts': [
+            'jina=cli:main',
+            'jinad=daemon:main',
+        ],
     },
     cmdclass={
         'develop': PostDevelopCommand,
@@ -166,6 +181,11 @@ setup(
         'Topic :: Software Development :: Libraries',
         'Topic :: Software Development :: Libraries :: Python Modules',
     ],
+    project_urls={
+        'Documentation': 'https://docs.jina.ai',
+        'Source': 'https://github.com/jina-ai/jina/',
+        'Tracker': 'https://github.com/jina-ai/jina/issues',
+    },
     keywords='jina cloud-native neural-search query search index elastic neural-network encoding '
     'embedding serving docker container image video audio deep-learning',
 )

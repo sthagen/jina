@@ -6,6 +6,9 @@ from jina.helper import get_internal_ip
 from jina.parsers import set_gateway_parser
 from jina.parsers import set_pod_parser
 from jina.peapods import Pod
+from jina import __default_executor__
+
+cur_dir = os.path.dirname(os.path.abspath(__file__))
 
 
 @pytest.fixture(scope='function')
@@ -27,7 +30,7 @@ def pod_args_singleton():
         '--name',
         'test2',
         '--uses-before',
-        '_pass',
+        __default_executor__,
         '--parallel',
         '1',
         '--host',
@@ -44,14 +47,7 @@ def test_name(pod_args):
 def test_host(pod_args):
     with Pod(pod_args) as pod:
         assert pod.host == '0.0.0.0'
-        assert pod.host_in == '0.0.0.0'
-        assert pod.host_out == '0.0.0.0'
-
-
-def test_address_in_out(pod_args):
-    with Pod(pod_args) as pod:
-        assert pod.host in pod.address_in
-        assert pod.host in pod.address_out
+        assert pod.head_host == '0.0.0.0'
 
 
 def test_is_ready(pod_args):
@@ -118,38 +114,57 @@ def test_pod_context_parallel(runtime, parallel):
     reason='for unknown reason, this test is flaky on Github action, '
     'but locally it SHOULD work fine',
 )
-@pytest.mark.parametrize('restful', [True, False])
 @pytest.mark.parametrize('runtime', ['process', 'thread'])
-@pytest.mark.parametrize('runtime_cls', ['RESTRuntime', 'GRPCRuntime'])
-def test_gateway_pod(runtime, restful, runtime_cls):
+@pytest.mark.parametrize(
+    'protocol, runtime_cls',
+    [
+        ('websocket', 'WebSocketRuntime'),
+        ('grpc', 'GRPCRuntime'),
+        ('http', 'HTTPRuntime'),
+    ],
+)
+def test_gateway_pod(runtime, protocol, runtime_cls):
     args = set_gateway_parser().parse_args(
-        ['--runtime-backend', runtime, '--runtime-cls', runtime_cls]
-        + (['--restful'] if restful else [])
+        ['--runtime-backend', runtime, '--protocol', protocol]
     )
     with Pod(args) as p:
         assert len(p.all_args) == 1
-        if restful:
-            assert p.all_args[0].runtime_cls == 'RESTRuntime'
-        else:
-            assert p.all_args[0].runtime_cls == 'GRPCRuntime'
+        assert p.all_args[0].runtime_cls == runtime_cls
 
     Pod(args).start().close()
 
 
 @pytest.mark.parametrize('runtime', ['process', 'thread'])
-def test_pod_naming_with_parallel(runtime):
+def test_pod_naming_with_parallel_any(runtime):
     args = set_pod_parser().parse_args(
         ['--name', 'pod', '--parallel', '2', '--runtime-backend', runtime]
     )
     with Pod(args) as bp:
         assert bp.peas[0].name == 'pod/head'
-        assert bp.peas[1].name == 'pod/tail'
-        assert bp.peas[2].name == 'pod/0'
-        assert bp.peas[3].name == 'pod/1'
-        assert bp.peas[0].runtime.name == 'pod/head/ZEDRuntime'
-        assert bp.peas[1].runtime.name == 'pod/tail/ZEDRuntime'
-        assert bp.peas[2].runtime.name == 'pod/0/ZEDRuntime'
-        assert bp.peas[3].runtime.name == 'pod/1/ZEDRuntime'
+        assert bp.peas[1].name == 'pod/pea-0'
+        assert bp.peas[2].name == 'pod/pea-1'
+        assert bp.peas[3].name == 'pod/tail'
+
+
+@pytest.mark.parametrize('runtime', ['process', 'thread'])
+def test_pod_naming_with_parallel_all(runtime):
+    args = set_pod_parser().parse_args(
+        [
+            '--name',
+            'pod',
+            '--parallel',
+            '2',
+            '--runtime-backend',
+            runtime,
+            '--polling',
+            'ALL',
+        ]
+    )
+    with Pod(args) as bp:
+        assert bp.peas[0].name == 'pod/head'
+        assert bp.peas[1].name == 'pod/pea-0'
+        assert bp.peas[2].name == 'pod/pea-1'
+        assert bp.peas[3].name == 'pod/tail'
 
 
 def test_pod_args_remove_uses_ba():
@@ -158,13 +173,20 @@ def test_pod_args_remove_uses_ba():
         assert p.num_peas == 1
 
     args = set_pod_parser().parse_args(
-        ['--uses-before', '_pass', '--uses-after', '_pass']
+        ['--uses-before', __default_executor__, '--uses-after', __default_executor__]
     )
     with Pod(args) as p:
         assert p.num_peas == 1
 
     args = set_pod_parser().parse_args(
-        ['--uses-before', '_pass', '--uses-after', '_pass', '--parallel', '2']
+        [
+            '--uses-before',
+            __default_executor__,
+            '--uses-after',
+            __default_executor__,
+            '--parallel',
+            '2',
+        ]
     )
     with Pod(args) as p:
         assert p.num_peas == 4
@@ -249,3 +271,88 @@ def test_pod_remote_pea_parallel_pea_host_set_completely(
                 assert pea_arg.host == pea_host
                 assert pea_arg.host_in == expected_host_in
                 assert pea_arg.host_out == expected_host_out
+
+
+@pytest.mark.parametrize('parallel', [1])
+@pytest.mark.parametrize(
+    'upload_files',
+    [[os.path.join(cur_dir, __file__), os.path.join(cur_dir, '__init__.py')]],
+)
+@pytest.mark.parametrize(
+    'uses, uses_before, uses_after, py_modules, expected',
+    [
+        (
+            os.path.join(cur_dir, '../../yaml/dummy_ext_exec.yml'),
+            '',
+            '',
+            [
+                os.path.join(cur_dir, '../../yaml/dummy_exec.py'),
+                os.path.join(cur_dir, '__init__.py'),
+            ],
+            [
+                os.path.join(cur_dir, '../../yaml/dummy_ext_exec.yml'),
+                os.path.join(cur_dir, '../../yaml/dummy_exec.py'),
+                os.path.join(cur_dir, __file__),
+                os.path.join(cur_dir, '__init__.py'),
+            ],
+        ),
+        (
+            os.path.join(cur_dir, '../../yaml/dummy_ext_exec.yml'),
+            os.path.join(cur_dir, '../../yaml/dummy_exec.py'),
+            os.path.join(cur_dir, '../../yaml/dummy_ext_exec.yml'),
+            [
+                os.path.join(cur_dir, '../../yaml/dummy_exec.py'),
+                os.path.join(cur_dir, '../../yaml/dummy_ext_exec.yml'),
+            ],
+            [
+                os.path.join(cur_dir, '../../yaml/dummy_ext_exec.yml'),
+                os.path.join(cur_dir, '../../yaml/dummy_exec.py'),
+                os.path.join(cur_dir, __file__),
+                os.path.join(cur_dir, '__init__.py'),
+            ],
+        ),
+        (
+            'non_existing1.yml',
+            'non_existing3.yml',
+            'non_existing4.yml',
+            ['non_existing1.py', 'non_existing2.py'],
+            [os.path.join(cur_dir, __file__), os.path.join(cur_dir, '__init__.py')],
+        ),
+    ],
+)
+def test_pod_upload_files(
+    parallel,
+    upload_files,
+    uses,
+    uses_before,
+    uses_after,
+    py_modules,
+    expected,
+):
+    args = set_pod_parser().parse_args(
+        [
+            '--uses',
+            uses,
+            '--uses-before',
+            uses_before,
+            '--uses-after',
+            uses_after,
+            '--py-modules',
+            *py_modules,
+            '--upload-files',
+            *upload_files,
+            '--parallel',
+            str(parallel),
+        ]
+    )
+    pod = Pod(args)
+    for k, v in pod.peas_args.items():
+        if k in ['head', 'tail']:
+            if v:
+                pass
+                # assert sorted(v.upload_files) == sorted(expected)
+        else:
+            for pea in v:
+                print(sorted(pea.upload_files))
+                print(sorted(expected))
+                assert sorted(pea.upload_files) == sorted(expected)

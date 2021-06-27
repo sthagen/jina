@@ -7,7 +7,7 @@ from google.protobuf.json_format import MessageToJson
 
 from jina import Document
 from jina.jaml import JAML
-from jina.optimizers import FlowOptimizer, MeanEvaluationCallback
+from jina.optimizers import FlowOptimizer, EvaluationCallback
 from jina.optimizers import run_optimizer_cli
 from jina.optimizers.flow_runner import SingleFlowRunner, MultiFlowRunner
 from jina.parsers.optimizer import set_optimizer_parser
@@ -46,21 +46,31 @@ def document_generator(num_doc):
         yield doc, groundtruth_doc
 
 
-def test_optimizer_single_flow(tmpdir, config):
+@pytest.mark.parametrize('sampler', ['TPESampler', 'GridSampler', 'RandomSampler'])
+def test_optimizer_single_flow(tmpdir, config, sampler):
     eval_flow_runner = SingleFlowRunner(
         flow_yaml=os.path.join(cur_dir, 'flow.yml'),
         documents=document_generator(10),
         request_size=1,
-        execution_method='search',
+        execution_endpoint='search',
     )
+    grid_sampler_search_space = {
+        'JINA_DUMMYCRAFTER_PARAM1': [0, 1],
+        'JINA_DUMMYCRAFTER_PARAM2': [0, 1, 2],
+        'JINA_DUMMYCRAFTER_PARAM3': [1],
+    }
     opt = FlowOptimizer(
         flow_runner=eval_flow_runner,
         parameter_yaml=os.path.join(cur_dir, 'parameter.yml'),
-        evaluation_callback=MeanEvaluationCallback(),
+        evaluation_callback=EvaluationCallback(),
         workspace_base_dir=str(tmpdir),
         n_trials=5,
+        sampler=sampler,
     )
-    result = opt.optimize_flow()
+    if sampler == 'GridSampler':
+        result = opt.optimize_flow(search_space=grid_sampler_search_space)
+    else:
+        result = opt.optimize_flow()
     validate_result(result, tmpdir)
 
 
@@ -71,20 +81,20 @@ def test_optimizer_multi_flow(tmpdir, config):
                 flow_yaml=os.path.join(cur_dir, 'flow.yml'),
                 documents=document_generator(10),
                 request_size=1,
-                execution_method='index',
+                execution_endpoint='index',
             ),
             SingleFlowRunner(
                 flow_yaml=os.path.join(cur_dir, 'flow.yml'),
                 documents=document_generator(10),
                 request_size=1,
-                execution_method='search',
+                execution_endpoint='search',
             ),
         ]
     )
     opt = FlowOptimizer(
         flow_runner=multi_flow_runner,
         parameter_yaml=os.path.join(cur_dir, 'parameter.yml'),
-        evaluation_callback=MeanEvaluationCallback(),
+        evaluation_callback=EvaluationCallback(),
         workspace_base_dir=str(tmpdir),
         n_trials=5,
     )
@@ -105,16 +115,15 @@ with:
             flow_yaml: '{os.path.join(cur_dir, 'flow.yml')}'
             documents: {jsonlines_file}
             request_size: 1
-            execution_method: 'index_lines'
-            documents_parameter_name: 'filepath'
+            execution_endpoint: '
+index'
         - !SingleFlowRunner
           with:
             flow_yaml: '{os.path.join(cur_dir, 'flow.yml')}'
             documents: {jsonlines_file}
             request_size: 1
-            execution_method: 'search_lines'
-            documents_parameter_name: 'filepath'
-  evaluation_callback: !MeanEvaluationCallback {{}}
+            execution_endpoint: 'search'
+  evaluation_callback: !EvaluationCallback {{}}
   parameter_yaml: '{os.path.join(cur_dir, 'parameter.yml')}'
   workspace_base_dir: {tmpdir}
   n_trials: 5
@@ -150,9 +159,8 @@ with:
       flow_yaml: '{os.path.join(cur_dir, 'flow.yml')}'
       documents: {jsonlines_file}
       request_size: 1
-      execution_method: 'search_lines'
-      documents_parameter_name: 'filepath'
-  evaluation_callback: !MeanEvaluationCallback {{}}
+      execution_endpoint: 'search'
+  evaluation_callback: !EvaluationCallback {{}}
   parameter_yaml: '{os.path.join(cur_dir, 'parameter.yml')}'
   workspace_base_dir: {tmpdir}
   n_trials: 5

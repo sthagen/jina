@@ -1,3 +1,4 @@
+import inspect
 import os
 
 import numpy as np
@@ -9,8 +10,9 @@ from jina.excepts import RuntimeFailToStart
 from jina.executors import BaseExecutor
 from jina.helper import random_identity
 from jina.peapods.pods import BasePod
-from jina.proto.jina_pb2 import DocumentProto
+from jina.types.document.generators import from_ndarray
 from jina.types.request import Response
+from jina.proto import jina_pb2
 from tests import random_docs, validate_callback
 
 cur_dir = os.path.dirname(os.path.abspath(__file__))
@@ -19,35 +21,35 @@ cur_dir = os.path.dirname(os.path.abspath(__file__))
 def test_flow_with_jump(tmpdir):
     def _validate(f):
         node = f._pod_nodes['gateway']
-        assert node.head_args.socket_in == SocketType.PULL_CONNECT
-        assert node.tail_args.socket_out == SocketType.PUSH_CONNECT
+        assert node.head_args.socket_in == SocketType.ROUTER_BIND
+        assert node.tail_args.socket_out == SocketType.DEALER_CONNECT
         node = f._pod_nodes['r1']
-        assert node.head_args.socket_in == SocketType.PULL_BIND
-        assert node.tail_args.socket_out == SocketType.PUB_BIND
+        assert node.head_args.socket_in == SocketType.ROUTER_BIND
+        assert node.tail_args.socket_out == SocketType.DEALER_CONNECT
         node = f._pod_nodes['r2']
-        assert node.head_args.socket_in == SocketType.SUB_CONNECT
-        assert node.tail_args.socket_out == SocketType.PUSH_CONNECT
+        assert node.head_args.socket_in == SocketType.ROUTER_BIND
+        assert node.tail_args.socket_out == SocketType.DEALER_CONNECT
         node = f._pod_nodes['r3']
-        assert node.head_args.socket_in == SocketType.SUB_CONNECT
-        assert node.tail_args.socket_out == SocketType.PUSH_CONNECT
+        assert node.head_args.socket_in == SocketType.ROUTER_BIND
+        assert node.tail_args.socket_out == SocketType.DEALER_CONNECT
         node = f._pod_nodes['r4']
-        assert node.head_args.socket_in == SocketType.PULL_BIND
-        assert node.tail_args.socket_out == SocketType.PUSH_CONNECT
+        assert node.head_args.socket_in == SocketType.ROUTER_BIND
+        assert node.tail_args.socket_out == SocketType.DEALER_CONNECT
         node = f._pod_nodes['r5']
-        assert node.head_args.socket_in == SocketType.PULL_BIND
-        assert node.tail_args.socket_out == SocketType.PUSH_CONNECT
+        assert node.head_args.socket_in == SocketType.ROUTER_BIND
+        assert node.tail_args.socket_out == SocketType.DEALER_CONNECT
         node = f._pod_nodes['r6']
-        assert node.head_args.socket_in == SocketType.PULL_BIND
-        assert node.tail_args.socket_out == SocketType.PUSH_CONNECT
+        assert node.head_args.socket_in == SocketType.ROUTER_BIND
+        assert node.tail_args.socket_out == SocketType.DEALER_CONNECT
         node = f._pod_nodes['r8']
-        assert node.head_args.socket_in == SocketType.PULL_BIND
-        assert node.tail_args.socket_out == SocketType.PUSH_CONNECT
+        assert node.head_args.socket_in == SocketType.ROUTER_BIND
+        assert node.tail_args.socket_out == SocketType.DEALER_CONNECT
         node = f._pod_nodes['r9']
-        assert node.head_args.socket_in == SocketType.PULL_BIND
-        assert node.tail_args.socket_out == SocketType.PUSH_CONNECT
+        assert node.head_args.socket_in == SocketType.ROUTER_BIND
+        assert node.tail_args.socket_out == SocketType.DEALER_CONNECT
         node = f._pod_nodes['r10']
-        assert node.head_args.socket_in == SocketType.PULL_BIND
-        assert node.tail_args.socket_out == SocketType.PUSH_BIND
+        assert node.head_args.socket_in == SocketType.ROUTER_BIND
+        assert node.tail_args.socket_out == SocketType.DEALER_CONNECT
         for name, node in f._pod_nodes.items():
             assert node.peas_args['peas'][0] == node.head_args
             assert node.peas_args['peas'][0] == node.tail_args
@@ -75,15 +77,15 @@ def test_flow_with_jump(tmpdir):
         _validate(f)
 
 
-@pytest.mark.parametrize('restful', [False, True])
-def test_simple_flow(restful):
+@pytest.mark.parametrize('protocol', ['websocket', 'grpc', 'http'])
+def test_simple_flow(protocol):
     bytes_gen = (Document() for _ in range(10))
 
     def bytes_fn():
         for _ in range(100):
             yield Document()
 
-    f = Flow(restful=restful).add()
+    f = Flow(protocol=protocol).add()
 
     with f:
         f.index(inputs=bytes_gen)
@@ -96,14 +98,14 @@ def test_simple_flow(restful):
         f.index(inputs=bytes_fn)
 
         node = f._pod_nodes['gateway']
-        assert node.head_args.socket_in == SocketType.PULL_CONNECT
-        assert node.tail_args.socket_out == SocketType.PUSH_CONNECT
+        assert node.head_args.socket_in == SocketType.ROUTER_BIND
+        assert node.tail_args.socket_out == SocketType.DEALER_CONNECT
 
     assert 'gateway' not in f
 
     node = f._pod_nodes['pod0']
-    assert node.head_args.socket_in == SocketType.PULL_BIND
-    assert node.tail_args.socket_out == SocketType.PUSH_BIND
+    assert node.head_args.socket_in == SocketType.ROUTER_BIND
+    assert node.tail_args.socket_out == SocketType.DEALER_CONNECT
 
     for name, node in f._pod_nodes.items():
         assert node.peas_args['peas'][0] == node.head_args
@@ -131,42 +133,42 @@ def test_flow_identical(tmpdir):
 
     with a as f:
         node = f._pod_nodes['gateway']
-        assert node.head_args.socket_in == SocketType.PULL_CONNECT
-        assert node.tail_args.socket_out == SocketType.PUSH_CONNECT
+        assert node.head_args.socket_in == SocketType.ROUTER_BIND
+        assert node.tail_args.socket_out == SocketType.DEALER_CONNECT
 
         node = f._pod_nodes['chunk_seg']
-        assert node.head_args.socket_in == SocketType.PULL_BIND
+        assert node.head_args.socket_in == SocketType.ROUTER_BIND
         assert node.head_args.socket_out == SocketType.ROUTER_BIND
         for arg in node.peas_args['peas']:
             assert arg.socket_in == SocketType.DEALER_CONNECT
             assert arg.socket_out == SocketType.PUSH_CONNECT
         assert node.tail_args.socket_in == SocketType.PULL_BIND
-        assert node.tail_args.socket_out == SocketType.PUB_BIND
+        assert node.tail_args.socket_out == SocketType.DEALER_CONNECT
 
         node = f._pod_nodes['wqncode1']
-        assert node.head_args.socket_in == SocketType.SUB_CONNECT
+        assert node.head_args.socket_in == SocketType.ROUTER_BIND
         assert node.head_args.socket_out == SocketType.ROUTER_BIND
         for arg in node.peas_args['peas']:
             assert arg.socket_in == SocketType.DEALER_CONNECT
             assert arg.socket_out == SocketType.PUSH_CONNECT
         assert node.tail_args.socket_in == SocketType.PULL_BIND
-        assert node.tail_args.socket_out == SocketType.PUSH_CONNECT
+        assert node.tail_args.socket_out == SocketType.DEALER_CONNECT
 
         node = f._pod_nodes['encode2']
-        assert node.head_args.socket_in == SocketType.SUB_CONNECT
+        assert node.head_args.socket_in == SocketType.ROUTER_BIND
         assert node.head_args.socket_out == SocketType.ROUTER_BIND
         for arg in node.peas_args['peas']:
             assert arg.socket_in == SocketType.DEALER_CONNECT
             assert arg.socket_out == SocketType.PUSH_CONNECT
         assert node.tail_args.socket_in == SocketType.PULL_BIND
-        assert node.tail_args.socket_out == SocketType.PUSH_CONNECT
+        assert node.tail_args.socket_out == SocketType.DEALER_CONNECT
 
 
-@pytest.mark.parametrize('restful', [False, True])
-def test_flow_no_container(restful):
-    f = Flow(restful=restful).add(
+@pytest.mark.parametrize('protocol', ['websocket', 'grpc', 'http'])
+def test_flow_no_container(protocol):
+    f = Flow(protocol=protocol).add(
         name='dummyEncoder',
-        uses=os.path.join(cur_dir, '../mwu-encoder/mwu_encoder.yml'),
+        uses=os.path.join(cur_dir, 'mwu-encoder/mwu_encoder.yml'),
     )
 
     with f:
@@ -178,16 +180,6 @@ def docpb_workspace(tmpdir):
     os.environ['TEST_DOCSHARD_WORKSPACE'] = str(tmpdir)
     yield
     del os.environ['TEST_DOCSHARD_WORKSPACE']
-
-
-def test_shards(docpb_workspace):
-    f = Flow().add(
-        name='doc_pb', uses=os.path.join(cur_dir, '../yaml/test-docpb.yml'), parallel=3
-    )
-    with f:
-        f.index(inputs=random_docs(1000), random_doc_id=False)
-    with f:
-        pass
 
 
 def test_py_client():
@@ -206,44 +198,44 @@ def test_py_client():
 
     with f:
         node = f._pod_nodes['gateway']
-        assert node.head_args.socket_in == SocketType.PULL_CONNECT
-        assert node.tail_args.socket_out == SocketType.PUSH_CONNECT
+        assert node.head_args.socket_in == SocketType.ROUTER_BIND
+        assert node.tail_args.socket_out == SocketType.DEALER_CONNECT
 
         node = f._pod_nodes['r1']
-        assert node.head_args.socket_in == SocketType.PULL_BIND
-        assert node.tail_args.socket_out == SocketType.PUB_BIND
+        assert node.head_args.socket_in == SocketType.ROUTER_BIND
+        assert node.tail_args.socket_out == SocketType.DEALER_CONNECT
 
         node = f._pod_nodes['r2']
-        assert node.head_args.socket_in == SocketType.SUB_CONNECT
-        assert node.tail_args.socket_out == SocketType.PUSH_CONNECT
+        assert node.head_args.socket_in == SocketType.ROUTER_BIND
+        assert node.tail_args.socket_out == SocketType.DEALER_CONNECT
 
         node = f._pod_nodes['r3']
-        assert node.head_args.socket_in == SocketType.SUB_CONNECT
-        assert node.tail_args.socket_out == SocketType.PUSH_CONNECT
+        assert node.head_args.socket_in == SocketType.ROUTER_BIND
+        assert node.tail_args.socket_out == SocketType.DEALER_CONNECT
 
         node = f._pod_nodes['r4']
-        assert node.head_args.socket_in == SocketType.PULL_BIND
-        assert node.tail_args.socket_out == SocketType.PUSH_CONNECT
+        assert node.head_args.socket_in == SocketType.ROUTER_BIND
+        assert node.tail_args.socket_out == SocketType.DEALER_CONNECT
 
         node = f._pod_nodes['r5']
-        assert node.head_args.socket_in == SocketType.PULL_BIND
-        assert node.tail_args.socket_out == SocketType.PUSH_CONNECT
+        assert node.head_args.socket_in == SocketType.ROUTER_BIND
+        assert node.tail_args.socket_out == SocketType.DEALER_CONNECT
 
         node = f._pod_nodes['r6']
-        assert node.head_args.socket_in == SocketType.PULL_BIND
-        assert node.tail_args.socket_out == SocketType.PUSH_CONNECT
+        assert node.head_args.socket_in == SocketType.ROUTER_BIND
+        assert node.tail_args.socket_out == SocketType.DEALER_CONNECT
 
         node = f._pod_nodes['r8']
-        assert node.head_args.socket_in == SocketType.PULL_BIND
-        assert node.tail_args.socket_out == SocketType.PUSH_CONNECT
+        assert node.head_args.socket_in == SocketType.ROUTER_BIND
+        assert node.tail_args.socket_out == SocketType.DEALER_CONNECT
 
         node = f._pod_nodes['r9']
-        assert node.head_args.socket_in == SocketType.PULL_BIND
-        assert node.tail_args.socket_out == SocketType.PUSH_CONNECT
+        assert node.head_args.socket_in == SocketType.ROUTER_BIND
+        assert node.tail_args.socket_out == SocketType.DEALER_CONNECT
 
         node = f._pod_nodes['r10']
-        assert node.head_args.socket_in == SocketType.PULL_BIND
-        assert node.tail_args.socket_out == SocketType.PUSH_BIND
+        assert node.head_args.socket_in == SocketType.ROUTER_BIND
+        assert node.tail_args.socket_out == SocketType.DEALER_CONNECT
 
         for name, node in f._pod_nodes.items():
             assert node.peas_args['peas'][0] == node.head_args
@@ -255,16 +247,16 @@ def test_dry_run_with_two_pathways_diverging_at_gateway():
 
     with f:
         node = f._pod_nodes['gateway']
-        assert node.head_args.socket_in == SocketType.PULL_CONNECT
-        assert node.tail_args.socket_out == SocketType.PUB_BIND
+        assert node.head_args.socket_in == SocketType.ROUTER_BIND
+        assert node.tail_args.socket_out == SocketType.DEALER_CONNECT
 
         node = f._pod_nodes['r2']
-        assert node.head_args.socket_in == SocketType.SUB_CONNECT
-        assert node.tail_args.socket_out == SocketType.PUSH_CONNECT
+        assert node.head_args.socket_in == SocketType.ROUTER_BIND
+        assert node.tail_args.socket_out == SocketType.DEALER_CONNECT
 
         node = f._pod_nodes['r3']
-        assert node.head_args.socket_in == SocketType.SUB_CONNECT
-        assert node.tail_args.socket_out == SocketType.PUSH_CONNECT
+        assert node.head_args.socket_in == SocketType.ROUTER_BIND
+        assert node.tail_args.socket_out == SocketType.DEALER_CONNECT
 
         for name, node in f._pod_nodes.items():
             assert node.peas_args['peas'][0] == node.head_args
@@ -282,20 +274,20 @@ def test_dry_run_with_two_pathways_diverging_at_non_gateway():
 
     with f:
         node = f._pod_nodes['gateway']
-        assert node.head_args.socket_in == SocketType.PULL_CONNECT
-        assert node.tail_args.socket_out == SocketType.PUSH_CONNECT
+        assert node.head_args.socket_in == SocketType.ROUTER_BIND
+        assert node.tail_args.socket_out == SocketType.DEALER_CONNECT
 
         node = f._pod_nodes['r1']
-        assert node.head_args.socket_in == SocketType.PULL_BIND
-        assert node.tail_args.socket_out == SocketType.PUB_BIND
+        assert node.head_args.socket_in == SocketType.ROUTER_BIND
+        assert node.tail_args.socket_out == SocketType.DEALER_CONNECT
 
         node = f._pod_nodes['r2']
-        assert node.head_args.socket_in == SocketType.SUB_CONNECT
-        assert node.tail_args.socket_out == SocketType.PUSH_CONNECT
+        assert node.head_args.socket_in == SocketType.ROUTER_BIND
+        assert node.tail_args.socket_out == SocketType.DEALER_CONNECT
 
         node = f._pod_nodes['r3']
-        assert node.head_args.socket_in == SocketType.SUB_CONNECT
-        assert node.tail_args.socket_out == SocketType.PUSH_CONNECT
+        assert node.head_args.socket_in == SocketType.ROUTER_BIND
+        assert node.tail_args.socket_out == SocketType.DEALER_CONNECT
 
         for name, node in f._pod_nodes.items():
             assert node.peas_args['peas'][0] == node.head_args
@@ -305,23 +297,23 @@ def test_dry_run_with_two_pathways_diverging_at_non_gateway():
 def test_refactor_num_part():
     f = (
         Flow()
-        .add(name='r1', uses='_logforward', needs='gateway')
-        .add(name='r2', uses='_logforward', needs='gateway')
+        .add(name='r1', needs='gateway')
+        .add(name='r2', needs='gateway')
         .join(['r1', 'r2'])
     )
 
     with f:
         node = f._pod_nodes['gateway']
-        assert node.head_args.socket_in == SocketType.PULL_CONNECT
-        assert node.tail_args.socket_out == SocketType.PUB_BIND
+        assert node.head_args.socket_in == SocketType.ROUTER_BIND
+        assert node.tail_args.socket_out == SocketType.DEALER_CONNECT
 
         node = f._pod_nodes['r1']
-        assert node.head_args.socket_in == SocketType.SUB_CONNECT
-        assert node.tail_args.socket_out == SocketType.PUSH_CONNECT
+        assert node.head_args.socket_in == SocketType.ROUTER_BIND
+        assert node.tail_args.socket_out == SocketType.DEALER_CONNECT
 
         node = f._pod_nodes['r2']
-        assert node.head_args.socket_in == SocketType.SUB_CONNECT
-        assert node.tail_args.socket_out == SocketType.PUSH_CONNECT
+        assert node.head_args.socket_in == SocketType.ROUTER_BIND
+        assert node.tail_args.socket_out == SocketType.DEALER_CONNECT
 
         for name, node in f._pod_nodes.items():
             assert node.peas_args['peas'][0] == node.head_args
@@ -331,63 +323,61 @@ def test_refactor_num_part():
 def test_refactor_num_part_proxy():
     f = (
         Flow()
-        .add(name='r1', uses='_logforward')
-        .add(name='r2', uses='_logforward', needs='r1')
-        .add(name='r3', uses='_logforward', needs='r1')
+        .add(name='r1')
+        .add(name='r2', needs='r1')
+        .add(name='r3', needs='r1')
         .join(['r2', 'r3'])
     )
 
     with f:
         node = f._pod_nodes['gateway']
-        assert node.head_args.socket_in == SocketType.PULL_CONNECT
-        assert node.tail_args.socket_out == SocketType.PUSH_CONNECT
+        assert node.head_args.socket_in == SocketType.ROUTER_BIND
+        assert node.tail_args.socket_out == SocketType.DEALER_CONNECT
 
         node = f._pod_nodes['r1']
-        assert node.head_args.socket_in == SocketType.PULL_BIND
-        assert node.tail_args.socket_out == SocketType.PUB_BIND
+        assert node.head_args.socket_in == SocketType.ROUTER_BIND
+        assert node.tail_args.socket_out == SocketType.DEALER_CONNECT
 
         node = f._pod_nodes['r2']
-        assert node.head_args.socket_in == SocketType.SUB_CONNECT
-        assert node.tail_args.socket_out == SocketType.PUSH_CONNECT
+        assert node.head_args.socket_in == SocketType.ROUTER_BIND
+        assert node.tail_args.socket_out == SocketType.DEALER_CONNECT
 
         node = f._pod_nodes['r3']
-        assert node.head_args.socket_in == SocketType.SUB_CONNECT
-        assert node.tail_args.socket_out == SocketType.PUSH_CONNECT
+        assert node.head_args.socket_in == SocketType.ROUTER_BIND
+        assert node.tail_args.socket_out == SocketType.DEALER_CONNECT
 
         for name, node in f._pod_nodes.items():
             assert node.peas_args['peas'][0] == node.head_args
             assert node.peas_args['peas'][0] == node.tail_args
 
 
-@pytest.mark.parametrize('restful', [False, True])
-def test_refactor_num_part_proxy_2(restful):
+@pytest.mark.parametrize('protocol', ['websocket', 'grpc', 'http'])
+def test_refactor_num_part_proxy_2(protocol):
     f = (
-        Flow(restful=restful)
-        .add(name='r1', uses='_logforward')
-        .add(name='r2', uses='_logforward', needs='r1', parallel=2)
-        .add(name='r3', uses='_logforward', needs='r1', parallel=3, polling='ALL')
+        Flow(protocol=protocol)
+        .add(name='r1')
+        .add(name='r2', needs='r1', parallel=2)
+        .add(name='r3', needs='r1', parallel=3, polling='ALL')
         .needs(['r2', 'r3'])
     )
 
     with f:
-        f.index(['abbcs', 'efgh'])
+        f.index([Document(text='abbcs'), Document(text='efgh')])
 
 
-@pytest.mark.parametrize('restful', [False, True])
-def test_refactor_num_part_2(restful):
-    f = Flow(restful=restful).add(
-        name='r1', uses='_logforward', needs='gateway', parallel=3, polling='ALL'
+@pytest.mark.parametrize('protocol', ['websocket', 'grpc', 'http'])
+def test_refactor_num_part_2(protocol):
+    f = Flow(protocol=protocol).add(
+        name='r1', needs='gateway', parallel=3, polling='ALL'
     )
 
     with f:
-        f.index(['abbcs', 'efgh'])
+        f.index([Document(text='abbcs'), Document(text='efgh')])
 
-    f = Flow(restful=restful).add(
-        name='r1', uses='_logforward', needs='gateway', parallel=3
-    )
+    f = Flow(protocol=protocol).add(name='r1', needs='gateway', parallel=3)
 
     with f:
-        f.index(['abbcs', 'efgh'])
+        f.index([Document(text='abbcs'), Document(text='efgh')])
 
 
 @pytest.fixture()
@@ -397,28 +387,16 @@ def datauri_workspace(tmpdir):
     del os.environ['TEST_DATAURIINDEX_WORKSPACE']
 
 
-@pytest.mark.parametrize('restful', [False, True])
-def test_index_text_files(mocker, restful, datauri_workspace):
-    def validate(req):
-        assert len(req.docs) > 0
-        for d in req.docs:
-            assert d.mime_type == 'text/plain'
+@pytest.mark.parametrize('protocol', ['websocket', 'grpc', 'http'])
+def test_flow_with_publish_driver(mocker, protocol):
+    from jina import Executor, requests
 
-    response_mock = mocker.Mock()
+    class DummyOneHotTextEncoder(Executor):
+        @requests
+        def foo(self, docs, **kwargs):
+            for d in docs:
+                d.embedding = np.array([1, 2, 3])
 
-    f = Flow(restful=restful, read_only=True).add(
-        uses=os.path.join(cur_dir, '../yaml/datauriindex.yml'), timeout_ready=-1
-    )
-    files = os.path.join(cur_dir, 'yaml/*.yml')
-    with f:
-        f.index_files(files, on_done=response_mock)
-
-    validate_callback(response_mock, validate)
-
-
-# TODO(Deepankar): Gets stuck when `restful: True` - issues with `needs='gateway'`
-@pytest.mark.parametrize('restful', [False])
-def test_flow_with_publish_driver(mocker, restful):
     def validate(req):
         for d in req.docs:
             assert d.embedding is not None
@@ -426,62 +404,24 @@ def test_flow_with_publish_driver(mocker, restful):
     response_mock = mocker.Mock()
 
     f = (
-        Flow(restful=restful)
-        .add(name='r2', uses='!DummyOneHotTextEncoder')
-        .add(name='r3', uses='!DummyOneHotTextEncoder', needs='gateway')
+        Flow(protocol=protocol)
+        .add(name='r2', uses=DummyOneHotTextEncoder)
+        .add(name='r3', uses=DummyOneHotTextEncoder, needs='gateway')
         .join(needs=['r2', 'r3'])
     )
 
     with f:
-        f.index(['text_1', 'text_2'], on_done=response_mock)
-
-    validate_callback(response_mock, validate)
-
-
-@pytest.mark.parametrize('restful', [False, True])
-def test_flow_with_modalitys_simple(mocker, restful):
-    def validate(req):
-        for d in req.index.docs:
-            assert d.modality in ['mode1', 'mode2']
-
-    def input_function():
-        doc1 = DocumentProto()
-        doc1.modality = 'mode1'
-        doc2 = DocumentProto()
-        doc2.modality = 'mode2'
-        doc3 = DocumentProto()
-        doc3.modality = 'mode1'
-        return [doc1, doc2, doc3]
-
-    response_mock = mocker.Mock()
-
-    flow = (
-        Flow(restful=restful)
-        .add(name='chunk_seg', parallel=3)
-        .add(
-            name='encoder12',
-            parallel=2,
-            uses='- !FilterQL | {lookups: {modality__in: [mode1, mode2]}, traversal_paths: [c]}',
+        f.index(
+            [Document(text='text_1'), Document(text='text_2')], on_done=response_mock
         )
-    )
-    with flow:
-        flow.index(inputs=input_function, on_done=response_mock)
 
     validate_callback(response_mock, validate)
 
 
-def test_flow_arguments_priorities():
-    f = Flow(port_expose=12345).add(name='test', port_expose=23456)
-    assert f._pod_nodes['test'].args.port_expose == 23456
-
-    f = Flow(port_expose=12345).add(name='test')
-    assert f._pod_nodes['test'].args.port_expose == 12345
-
-
-@pytest.mark.parametrize('restful', [False])
-def test_flow_arbitrary_needs(restful):
+@pytest.mark.parametrize('protocol', ['websocket', 'grpc', 'http'])
+def test_flow_arbitrary_needs(protocol):
     f = (
-        Flow(restful=restful)
+        Flow(protocol=protocol)
         .add(name='p1')
         .add(name='p2', needs='gateway')
         .add(name='p3', needs='gateway')
@@ -494,16 +434,16 @@ def test_flow_arbitrary_needs(restful):
     )
 
     with f:
-        f.index(['abc', 'def'])
+        f.index([Document(text='abbcs'), Document(text='efgh')])
 
 
-@pytest.mark.parametrize('restful', [False])
-def test_flow_needs_all(restful):
-    f = Flow(restful=restful).add(name='p1', needs='gateway').needs_all(name='r1')
+@pytest.mark.parametrize('protocol', ['websocket', 'grpc', 'http'])
+def test_flow_needs_all(protocol):
+    f = Flow(protocol=protocol).add(name='p1', needs='gateway').needs_all(name='r1')
     assert f._pod_nodes['r1'].needs == {'p1'}
 
     f = (
-        Flow(restful=restful)
+        Flow(protocol=protocol)
         .add(name='p1', needs='gateway')
         .add(name='p2', needs='gateway')
         .add(name='p3', needs='gateway')
@@ -513,10 +453,10 @@ def test_flow_needs_all(restful):
     assert f._pod_nodes['r2'].needs == {'p3', 'r1'}
 
     with f:
-        f.index_ndarray(np.random.random([10, 10]))
+        f.index(from_ndarray(np.random.random([10, 10])))
 
     f = (
-        Flow(restful=restful)
+        Flow(protocol=protocol)
         .add(name='p1', needs='gateway')
         .add(name='p2', needs='gateway')
         .add(name='p3', needs='gateway')
@@ -528,7 +468,7 @@ def test_flow_needs_all(restful):
     assert f._pod_nodes['p4'].needs == {'r2'}
 
     with f:
-        f.index_ndarray(np.random.random([10, 10]))
+        f.index(from_ndarray(np.random.random([10, 10])))
 
 
 def test_flow_with_pod_envs():
@@ -561,13 +501,23 @@ def test_flow_with_pod_envs():
 
 
 @pytest.mark.parametrize('return_results', [False, True])
-@pytest.mark.parametrize('restful', [False, True])
-def test_return_results_sync_flow(return_results, restful):
-    with Flow(restful=restful, return_results=return_results).add() as f:
-        r = f.index_ndarray(np.random.random([10, 2]))
+@pytest.mark.parametrize('protocol', ['websocket', 'grpc', 'http'])
+def test_return_results_sync_flow(return_results, protocol):
+    with Flow(protocol=protocol).add() as f:
+        r = f.index(
+            from_ndarray(np.random.random([10, 2])), return_results=return_results
+        )
         if return_results:
             assert isinstance(r, list)
             assert isinstance(r[0], Response)
+            assert len(r[0].docs) == 10
+            for doc in r[0].docs:
+                assert isinstance(doc, Document)
+
+            assert len(r[0].data.docs) == 10
+            for doc in r[0].data.docs:
+                assert isinstance(doc, jina_pb2.DocumentProto)
+
         else:
             assert r is None
 
@@ -590,8 +540,8 @@ def test_flow_host_expose_shortcut(input, expect_host, expect_port):
 
 def test_flow_workspace_id():
     f = Flow().add().add().add().build()
-    assert len(f.workspace_id) == 3
-    assert len(set(f.workspace_id.values())) == 3
+    assert len(f.workspace_id) == 4
+    assert len(set(f.workspace_id.values())) == 4
 
     with pytest.raises(ValueError):
         f.workspace_id = 'hello'
@@ -614,7 +564,6 @@ def test_flow_identity():
     f.identity = new_id
     assert len(set(f.identity.values())) == 1
     assert list(f.identity.values())[0] == new_id
-    assert f.args.identity == new_id
 
 
 def test_flow_identity_override():
@@ -632,8 +581,8 @@ def test_flow_identity_override():
 !Flow
 version: '1.0'
 pods:
-    - uses: _pass
-    - uses: _pass
+    - name: hello
+    - name: world
       parallel: 3
     '''
 
@@ -684,9 +633,9 @@ def test_socket_types_2_remote_one_local():
 
     f.build()
 
-    assert f._pod_nodes['join'].head_args.socket_in == SocketType.PULL_BIND
-    assert f._pod_nodes['pod2'].tail_args.socket_out == SocketType.PUSH_CONNECT
-    assert f._pod_nodes['pod3'].tail_args.socket_out == SocketType.PUSH_CONNECT
+    assert f._pod_nodes['join'].head_args.socket_in == SocketType.ROUTER_BIND
+    assert f._pod_nodes['pod2'].tail_args.socket_out == SocketType.DEALER_CONNECT
+    assert f._pod_nodes['pod3'].tail_args.socket_out == SocketType.DEALER_CONNECT
 
 
 def test_socket_types_2_remote_one_local_input_socket_pull_connect_from_remote():
@@ -699,12 +648,10 @@ def test_socket_types_2_remote_one_local_input_socket_pull_connect_from_remote()
     )
 
     f.build()
-    for k, v in f:
-        print(f'{v.name}\tIN: {v.address_in}\t{v.address_out}')
 
-    assert f._pod_nodes['join'].head_args.socket_in == SocketType.PULL_BIND
-    assert f._pod_nodes['pod2'].tail_args.socket_out == SocketType.PUSH_CONNECT
-    assert f._pod_nodes['pod3'].tail_args.socket_out == SocketType.PUSH_CONNECT
+    assert f._pod_nodes['join'].head_args.socket_in == SocketType.ROUTER_BIND
+    assert f._pod_nodes['pod2'].tail_args.socket_out == SocketType.DEALER_CONNECT
+    assert f._pod_nodes['pod3'].tail_args.socket_out == SocketType.DEALER_CONNECT
 
 
 def test_single_document_flow_index():
@@ -734,20 +681,6 @@ def test_flow_get_item():
     assert isinstance(f1['pod0'], BasePod)
 
 
-def test_flow_yaml_dump():
-    import io
-
-    f = io.StringIO()
-    f1 = Flow().add()
-    with f1:
-        f1.to_swarm_yaml(path=f)
-        assert 'gateway' in f.getvalue()
-        assert 'services' in f.getvalue()
-        assert 'jina pod' in f.getvalue()
-
-    assert '!Flow' in f1.yaml_spec
-
-
 def test_flow_add_class():
     class CustomizedExecutor(BaseExecutor):
         pass
@@ -759,9 +692,9 @@ def test_flow_add_class():
 
 
 def test_flow_allinone_yaml():
-    from jina import Encoder
+    from jina import Executor
 
-    class CustomizedEncoder(Encoder):
+    class CustomizedEncoder(Executor):
         pass
 
     f = Flow.load_config(os.path.join(cur_dir, 'yaml/flow-allinone.yml'))
@@ -771,3 +704,33 @@ def test_flow_allinone_yaml():
     f = Flow.load_config(os.path.join(cur_dir, 'yaml/flow-allinone-oldstyle.yml'))
     with f:
         pass
+
+
+def test_flow_empty_data_request(mocker):
+    from jina import Executor, requests
+
+    class MyExec(Executor):
+        @requests
+        def foo(self, parameters, **kwargs):
+            assert parameters['hello'] == 'world'
+
+    f = Flow().add(uses=MyExec)
+
+    mock = mocker.Mock()
+
+    with f:
+        f.post('/hello', parameters={'hello': 'world'}, on_done=mock)
+
+    mock.assert_called()
+
+
+def test_flow_common_kwargs():
+
+    with Flow(name='hello', something_random=True).add() as f:
+        assert f._common_kwargs == {'something_random': True}
+
+
+@pytest.mark.parametrize('is_async', [True, False])
+def test_flow_set_asyncio_switch_post(is_async):
+    f = Flow(asyncio=is_async)
+    assert inspect.isasyncgenfunction(f.post) == is_async

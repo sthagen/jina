@@ -1,17 +1,16 @@
-from typing import Iterable
 import itertools
+from typing import Iterable
 
-if False:
-    from ..document.traversable import Traversable
+
+def _check_traversal_path_type(traversal_paths):
+    if isinstance(traversal_paths, str):
+        raise ValueError('traversal_paths needs to be an Iterable[str]')
 
 
 class TraversableSequence:
     """
     A mixin used for traversing a `Sequence[Traversable]`.
     """
-
-    def __iter__(self) -> Iterable['Traversable']:
-        raise NotImplementedError
 
     def traverse(
         self, traversal_paths: Iterable[str]
@@ -34,6 +33,7 @@ class TraversableSequence:
             - [`r`, `c`]: docs in this TraversableSequence and all child-documents at granularity 1
 
         """
+        _check_traversal_path_type(traversal_paths)
 
         for p in traversal_paths:
             yield from self._traverse(self, p)
@@ -50,10 +50,14 @@ class TraversableSequence:
             elif loc == 'c':
                 for d in docs:
                     yield from TraversableSequence._traverse(d.chunks, path[1:])
+            else:
+                raise ValueError(
+                    f'`path`:{loc} is invalid, must be one of `c`, `r`, `m`'
+                )
         else:
             yield docs
 
-    def traverse_flattened_per_path(
+    def traverse_flat_per_path(
         self, traversal_paths: Iterable[str]
     ) -> Iterable['TraversableSequence']:
         """
@@ -63,10 +67,12 @@ class TraversableSequence:
         :param traversal_paths: a list of string that represents the traversal path
         :yield: :class:``TraversableSequence`` containing the document of all leaves per path.
         """
+        _check_traversal_path_type(traversal_paths)
+
         for p in traversal_paths:
             yield self._flatten(self._traverse(self, p))
 
-    def traverse_flatten(self, traversal_paths: Iterable[str]) -> 'TraversableSequence':
+    def traverse_flat(self, traversal_paths: Iterable[str]) -> 'TraversableSequence':
         """
         Returns a single flattened :class:``TraversableSequence`` with all Documents, that are reached
         via the :param:``traversal_paths``.
@@ -77,8 +83,10 @@ class TraversableSequence:
             behavior then in :method:``traverse`` and :method:``traverse_flattened_per_path``!
 
         :param traversal_paths: a list of string that represents the traversal path
-        :return: a singel :class:``TraversableSequence`` containing the document of all leaves when applying the traversal_paths.
+        :return: a single :class:``TraversableSequence`` containing the document of all leaves when applying the traversal_paths.
         """
+        _check_traversal_path_type(traversal_paths)
+
         leaves = self.traverse(traversal_paths)
         return self._flatten(leaves)
 

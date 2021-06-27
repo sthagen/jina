@@ -1,14 +1,13 @@
 import sys
-from typing import Sequence
 
 import pytest
 
-from jina import Request, QueryLang, Document
+from jina import Document
 from jina.clients.request import request_generator
 from jina.proto import jina_pb2
-from jina.proto.jina_pb2 import EnvelopeProto
 from jina.types.message import Message
-from jina.types.request import _trigger_fields
+from jina.types.request import _trigger_fields, Request
+from jina.enums import CompressAlgo
 from tests import random_docs
 
 
@@ -16,138 +15,193 @@ from tests import random_docs
     'field',
     _trigger_fields.difference({'command', 'args', 'flush', 'propagate', 'targets'}),
 )
-def test_lazy_access(field):
+@pytest.mark.parametrize(
+    'algo',
+    [None, CompressAlgo.NONE],
+)
+def test_lazy_access(field, algo):
     reqs = (
-        Request(r.SerializeToString(), EnvelopeProto())
-        for r in request_generator(random_docs(10))
+        Request(r.SerializeToString(), algo)
+        for r in request_generator('/', random_docs(10))
     )
     for r in reqs:
-        assert not r.is_used
+        assert not r.is_decompressed
 
         # access r.train
         print(getattr(r, field))
 
         # now it is read
-        assert r.is_used
+        assert r.is_decompressed
 
 
-def test_multiple_access():
+@pytest.mark.parametrize(
+    'algo',
+    [None, CompressAlgo.NONE],
+)
+def test_multiple_access(algo):
     reqs = [
-        Request(r.SerializeToString(), EnvelopeProto())
-        for r in request_generator(random_docs(10))
+        Request(r.SerializeToString(), algo)
+        for r in request_generator('/', random_docs(10))
     ]
     for r in reqs:
-        assert not r.is_used
+        assert not r.is_decompressed
         assert r
-        assert not r.is_used
+        assert not r.is_decompressed
 
     for r in reqs:
-        assert not r.is_used
-        assert r.index
-        assert r.is_used
+        assert not r.is_decompressed
+        assert r.data
+        assert r.is_decompressed
 
 
-def test_lazy_nest_access():
+@pytest.mark.parametrize(
+    'algo',
+    [None, CompressAlgo.NONE],
+)
+def test_lazy_nest_access(algo):
     reqs = (
-        Request(r.SerializeToString(), EnvelopeProto())
-        for r in request_generator(random_docs(10))
+        Request(r.SerializeToString(), algo)
+        for r in request_generator('/', random_docs(10))
     )
     for r in reqs:
-        assert not r.is_used
+        assert not r.is_decompressed
         # write access r.train
         r.docs[0].id = '1' * 16
         # now it is read
-        assert r.is_used
-        assert r.index.docs[0].id == '1' * 16
+        assert r.is_decompressed
+        assert r.data.docs[0].id == '1' * 16
 
 
-def test_lazy_change_message_type():
+@pytest.mark.parametrize(
+    'algo',
+    [None, CompressAlgo.NONE],
+)
+def test_lazy_change_message_type(algo):
     reqs = (
-        Request(r.SerializeToString(), EnvelopeProto())
-        for r in request_generator(random_docs(10))
+        Request(r.SerializeToString(), algo)
+        for r in request_generator('/', random_docs(10))
     )
     for r in reqs:
-        assert not r.is_used
+        assert not r.is_decompressed
         # write access r.train
         r.control.command = jina_pb2.RequestProto.ControlRequestProto.IDLE
         # now it is read
-        assert r.is_used
-        assert len(r.index.docs) == 0
+        assert r.is_decompressed
+        assert len(r.data.docs) == 0
 
 
-def test_lazy_append_access():
+@pytest.mark.parametrize(
+    'algo',
+    [None, CompressAlgo.NONE],
+)
+def test_lazy_append_access(algo):
     reqs = (
-        Request(r.SerializeToString(), EnvelopeProto())
-        for r in request_generator(random_docs(10))
+        Request(r.SerializeToString(), algo)
+        for r in request_generator('/', random_docs(10))
     )
     for r in reqs:
-        assert not r.is_used
-        r.request_type = 'index'
+        assert not r.is_decompressed
+        r = Request().as_typed_request('data')
         # write access r.train
         r.docs.append(Document())
         # now it is read
-        assert r.is_used
+        assert r.is_decompressed
 
 
-def test_lazy_clear_access():
+@pytest.mark.parametrize(
+    'algo',
+    [None, CompressAlgo.NONE],
+)
+def test_lazy_clear_access(algo):
     reqs = (
-        Request(r.SerializeToString(), EnvelopeProto())
-        for r in request_generator(random_docs(10))
+        Request(r.SerializeToString(), algo)
+        for r in request_generator('/', random_docs(10))
     )
     for r in reqs:
-        assert not r.is_used
+        assert not r.is_decompressed
         # write access r.train
-        r.ClearField('index')
+        r.ClearField('data')
         # now it is read
-        assert r.is_used
+        assert r.is_decompressed
 
 
-def test_lazy_nested_clear_access():
+@pytest.mark.parametrize(
+    'algo',
+    [None, CompressAlgo.NONE],
+)
+def test_lazy_nested_clear_access(algo):
     reqs = (
-        Request(r.SerializeToString(), EnvelopeProto())
-        for r in request_generator(random_docs(10))
+        Request(r.SerializeToString(), algo)
+        for r in request_generator('/', random_docs(10))
     )
     for r in reqs:
-        assert not r.is_used
+        assert not r.is_decompressed
         # write access r.train
-        r.index.ClearField('docs')
+        r.data.ClearField('docs')
         # now it is read
-        assert r.is_used
+        assert r.is_decompressed
 
 
 def test_lazy_msg_access():
-    reqs = [
+    # this test does not make much sense, when `message` is instantiated without `envelope`, the `request` header is accessed and therefore decompressed
+    messages = [
         Message(
             None,
             r.SerializeToString(),
             'test',
             '123',
             request_id='123',
-            request_type='IndexRequest',
+            request_type='DataRequest',
         )
-        for r in request_generator(random_docs(10))
+        for r in request_generator('/', random_docs(10))
     ]
-    for r in reqs:
-        assert not r.request.is_used
-        assert r.envelope
-        assert len(r.dump()) == 3
-        assert not r.request.is_used
+    for m in messages:
+        assert m.request.is_decompressed
+        assert m.envelope
+        assert len(m.dump()) == 3
+        assert m.request.is_decompressed
 
-    for r in reqs:
-        assert not r.request.is_used
-        assert r.request
-        assert len(r.dump()) == 3
-        assert not r.request.is_used
+    for m in messages:
+        assert m.request.is_decompressed
+        assert m.request
+        assert len(m.dump()) == 3
+        assert m.request.is_decompressed
 
-    for r in reqs:
-        assert not r.request.is_used
-        assert r.request.index.docs
-        assert len(r.dump()) == 3
-        assert r.request.is_used
+    for m in messages:
+        assert m.request.is_decompressed
+        assert m.request.data.docs
+        assert len(m.dump()) == 3
+        assert m.request.is_decompressed
+
+
+def test_lazy_msg_access_with_envelope():
+    envelope_proto = jina_pb2.EnvelopeProto()
+    envelope_proto.compression.algorithm = 'NONE'
+    envelope_proto.request_type = 'DataRequest'
+    messages = [
+        Message(
+            envelope_proto,
+            r.SerializeToString(),
+        )
+        for r in request_generator('/', random_docs(10))
+    ]
+    for m in messages:
+        assert not m.request.is_decompressed
+        assert m.envelope
+        assert len(m.dump()) == 3
+        assert not m.request.is_decompressed
+        assert m.request._pb_body is None
+        assert m.request._buffer is not None
+        assert m.proto
+        assert m.request.is_decompressed
+        assert m.request._pb_body is not None
+        assert m.request._buffer is None
 
 
 def test_message_size():
-    reqs = [Message(None, r, 'test', '123') for r in request_generator(random_docs(10))]
+    reqs = [
+        Message(None, r, 'test', '123') for r in request_generator('/', random_docs(10))
+    ]
     for r in reqs:
         assert r.size == 0
         assert sys.getsizeof(r.envelope.SerializeToString())
@@ -158,60 +212,23 @@ def test_message_size():
         )
 
 
-def test_lazy_request_fields():
+@pytest.mark.parametrize(
+    'algo',
+    [None, CompressAlgo.NONE],
+)
+def test_lazy_request_fields(algo):
     reqs = (
-        Request(r.SerializeToString(), EnvelopeProto())
-        for r in request_generator(random_docs(10))
+        Request(r.SerializeToString(), algo)
+        for r in request_generator('/', random_docs(10))
     )
     for r in reqs:
         assert list(r.DESCRIPTOR.fields_by_name.keys())
 
 
-def test_request_extend_queryset():
-    q1 = {'name': 'SliceQL', 'parameters': {'start': 3, 'end': 4}}
-    q2 = QueryLang(
-        {'name': 'SliceQL', 'parameters': {'start': 3, 'end': 4}, 'priority': 1}
-    )
-    q3 = jina_pb2.QueryLangProto()
-    q3.name = 'SliceQL'
-    q3.parameters['start'] = 3
-    q3.parameters['end'] = 4
-    q3.priority = 2
-    r = Request()
-    r.queryset.extend([q1, q2, q3])
-    assert isinstance(r.queryset, Sequence)
-    assert len(r.queryset) == 3
-    for idx, q in enumerate(r.queryset):
-        assert q.priority == idx
-        assert q.parameters['start'] == 3
-        assert q.parameters['end'] == 4
-
-    # q1 and q2 refer to the same
-    assert len({id(q) for q in r.queryset}) == 2
-
-    r2 = Request()
-    r2.queryset.extend(r.queryset)
-    assert len({id(q) for q in r2.queryset}) == 2
-
-    r = Request()
-    r.queryset.append(q1)
-    r.queryset.append(q2)
-    r.queryset.append(q3)
-    for idx, q in enumerate(r.queryset):
-        assert q.priority == idx
-        assert q.parameters['start'] == 3
-        assert q.parameters['end'] == 4
-
-    with pytest.raises(TypeError):
-        r.queryset.extend(1)
-
-
 @pytest.mark.parametrize(
     'typ,pb_typ',
     [
-        ('train', jina_pb2.RequestProto.TrainRequestProto),
-        ('index', jina_pb2.RequestProto.IndexRequestProto),
-        ('search', jina_pb2.RequestProto.SearchRequestProto),
+        ('data', jina_pb2.RequestProto.DataRequestProto),
         ('control', jina_pb2.RequestProto.ControlRequestProto),
     ],
 )
@@ -221,7 +238,7 @@ def test_empty_request_type(typ, pb_typ):
     with pytest.raises(ValueError):
         print(r.body)
 
-    r.request_type = typ
+    r = r.as_typed_request(typ)
     assert r._request_type == typ
     assert isinstance(r.body, pb_typ)
 
@@ -229,13 +246,11 @@ def test_empty_request_type(typ, pb_typ):
 @pytest.mark.parametrize(
     'typ,pb_typ',
     [
-        ('index', jina_pb2.RequestProto.IndexRequestProto),
-        ('search', jina_pb2.RequestProto.SearchRequestProto),
+        ('data', jina_pb2.RequestProto.DataRequestProto),
     ],
 )
 def test_add_doc_to_type(typ, pb_typ):
-    r = Request()
-    r.request_type = typ
+    r = Request().as_typed_request(typ)
     for _ in range(10):
         r.docs.append(Document())
         r.groundtruths.append(Document())

@@ -117,15 +117,42 @@ jobs:
   docker-image-test:
     needs: commit-lint
     runs-on: ubuntu-20.04
+    services:
+      registry:
+        image: registry:2
+        ports:
+          - 5000:5000
+    strategy:
+      fail-fast: false
+      matrix:
+        test-arch: ["linux/amd64", "linux/arm64"]
     steps:
       - uses: actions/checkout@v2
+      - name: Set up Docker Buildx
+        id: buildx
+        uses: docker/setup-buildx-action@v1
+        with:
+          install: true
+          driver-opts: network=host
+      - name: Login to DockerHub
+        uses: docker/login-action@v1
+        with:
+          username: ${{ secrets.DOCKERHUB_DEVBOT_USER }}
+          password: ${{ secrets.DOCKERHUB_DEVBOT_TOKEN }}
       - run: |
-          echo "PIP_TAG='[devel]'" >> $GITHUB_ENV
+          docker run --rm --privileged multiarch/qemu-user-static --reset -p yes
+      - name: Build and test
+        uses: docker/build-push-action@v2
+        with:
+          context: .
+          file: Dockerfiles/debianx.Dockerfile
+          platforms: ${{ matrix.test-arch }}
+          push: true
+          tags: localhost:5000/jina/multiarch:latest
+          target: jina_devel
+          build-args: BUILD_DATE, JINA_VERSION, VCS_REF, PY_VERSION
       - run: |
-          docker build -f Dockerfiles/pip.Dockerfile -t jinaai/jina:test-pip .
-          docker run jinaai/jina:test-pip hello-world
-        env:
-          GITHUB_TOKEN: ${{secrets.GITHUB_TOKEN}}
+          docker run --platform ${{ matrix.test-arch }} localhost:5000/jina/multiarch:latest -v
 
   core-test:
     needs: [prep-testbed, commit-lint, lint-flake-8]
@@ -137,8 +164,8 @@ jobs:
         test-path: ${{fromJson(needs.prep-testbed.outputs.matrix)}}
     steps:
       - uses: actions/checkout@v2
-        with:
-          submodules: true
+#        with:
+#          submodules: true
       - name: Set up Python ${{ matrix.python-version }}
         uses: actions/setup-python@v2
         with:
@@ -149,18 +176,21 @@ jobs:
           python -m pip install --upgrade pip
           python -m pip install wheel
           pip install ".[cicd,test,daemon]" --no-cache-dir
-          jina check
+          jina
           export JINA_LOG_LEVEL="ERROR"
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       - name: Test
         id: test
         run: |
-          if [[ "${{ matrix.test-path }}" == "tests/distributed/test_against_external_daemon/" ]]; then
+          if [[ "${{ matrix.test-path }}" =~ ^tests/distributed/* || "${{ matrix.test-path }}" =~ ^tests/daemon/* ]]; then
+            # Build daemon for all daemon/distributed tests
             docker build -f Dockerfiles/debianx.Dockerfile -t jinaai/jina:test-daemon .
-            docker run --name jinad -v /var/run/docker.sock:/var/run/docker.sock --network=host -d jinaai/jina:test-daemon
+            if [[ "${{ matrix.test-path }}" == "tests/distributed/test_against_external_daemon/" ]]; then
+              docker run --add-host host.docker.internal:host-gateway --name jinad -v /var/run/docker.sock:/var/run/docker.sock -v /tmp/jinad:/tmp/jinad -p 8000:8000 -d jinaai/jina:test-daemon
+            fi
             pytest --suppress-no-test-exit-code --force-flaky --min-passes 1 --max-runs 5 --cov=jina --cov-report=xml --timeout=360 -v -s ${{ matrix.test-path }}
-            docker rm -f jinad
+            docker rm -f jinad || true
           else
             SUB='daemon'
             if [[ "${{ matrix.test-path }}" == *"$SUB"* ]]; then
@@ -177,7 +207,7 @@ jobs:
             echo "flag it as jina for codeoverage"
             echo "::set-output name=codecov_flag::jina"
           fi
-        timeout-minutes: 15
+        timeout-minutes: 20
         env:
           JINAHUB_USERNAME: ${{ secrets.JINAHUB_USERNAME }}
           JINAHUB_PASSWORD: ${{ secrets.JINAHUB_PASSWORD }}

@@ -1,12 +1,13 @@
 import os
 import shutil
 from collections.abc import Iterable
-from typing import Optional, Union, List
+from typing import Union, List, Optional, Callable
 
-from ..flow import Flow
+from ..types.document.generators import from_lines
 from ..helper import colored
-from ..logging import default_logger as logger
+from ..logging.predefined import default_logger as logger
 from ..jaml import JAMLCompatible
+from .. import Flow
 
 
 class FlowRunner(JAMLCompatible):
@@ -16,7 +17,7 @@ class FlowRunner(JAMLCompatible):
         self,
         trial_parameters: dict,
         workspace: str = 'workspace',
-        callback=None,
+        callback: Optional[Callable[..., None]] = None,
         **kwargs,
     ):
         """
@@ -39,46 +40,36 @@ class SingleFlowRunner(FlowRunner):
         flow_yaml: str,
         documents: Union[Iterable, str],
         request_size: int,
-        execution_method: str,
-        documents_parameter_name: Optional[str] = 'inputs',
+        execution_endpoint: str,
         overwrite_workspace: bool = False,
     ):
         """
-        `documents` maps to a parameter of the `execution_method`, depending on the method.
+        `documents` maps to a parameter of the `execution_endpoint`, depending on the method.
         If you use a generator function/list as `documents`, the default will work out of the box.
         Otherwise, the following settings will work:
-
-        indexing + jsonlines file: `execution_methos='index_lines', documents_parameter_name='filepath'`
-        search + jsonlines file: `execution_methos='search_lines', documents_parameter_name='filepath'`
-
-        indexing + file pattern: `execution_methos='index_files', documents_parameter_name='pattern'`
-        search + file pattern: `execution_methos='search_files', documents_parameter_name='pattern'`
 
         For more reasonable values, have a look at the :class:`Flow`.
 
         :param flow_yaml: Path to Flow yaml
-        :param documents: Input parameter for `execution_method` for iterating documents.
+        :param documents: Input parameter for `execution_endpoint` for iterating documents.
             (e.g. a list of documents for `index` or a .jsonlines file for `index_lines`)
         :param request_size: Request size used in the flow
-        :param execution_method: One of the methods of the Jina :py:class:`Flow` (e.g. `index_lines`)
-        :param documents_parameter_name: The `documents` will be mapped to `documents_parameter_name` in the function `execution_function`.
-            See `jina/flow/__init__.py::Flow` for more details.
-        :param overwrite_workspace: True, means workspace created by the Flow will be overwriten with each execution.
+        :param execution_endpoint: The endpoint, `f.post(on=)` should point to
+        :param overwrite_workspace: True, means workspace created by the Flow will be overwritten with each execution.
         :raises TypeError: When the documents are neither a `str` nor an `Iterable`
         """
         super().__init__()
         self._flow_yaml = flow_yaml
 
         if type(documents) is str:
-            self._documents = documents
+            self._documents = list(from_lines(filepath=documents))
         elif isinstance(documents, Iterable):
             self._documents = list(documents)
         else:
             raise TypeError(f"documents is of wrong type: {type(documents)}")
 
         self._request_size = request_size
-        self._execution_method = execution_method
-        self._documents_parameter_name = documents_parameter_name
+        self._execution_endpoint = execution_endpoint
         self._overwrite_workspace = overwrite_workspace
 
     def _setup_workspace(self, workspace):
@@ -104,25 +95,25 @@ class SingleFlowRunner(FlowRunner):
         self,
         trial_parameters: dict,
         workspace: str = 'workspace',
-        callback=None,
+        callback: Optional[Callable[..., None]] = None,
         **kwargs,
     ):
         """
         Running method of :class:`SingleFlowRunner`.
 
-        :param trial_parameters: parameters need to be tried
+        :param trial_parameters: parameters that need to be tried
         :param workspace: path of workspace
         :param callback: callback function
         :param kwargs: keyword argument
         """
         self._setup_workspace(workspace)
-        additional_arguments = {self._documents_parameter_name: self._documents}
-        additional_arguments.update(kwargs)
         with Flow.load_config(self._flow_yaml, context=trial_parameters) as f:
-            getattr(f, self._execution_method)(
+            f.post(
+                inputs=self._documents,
+                on=self._execution_endpoint,
                 request_size=self._request_size,
                 on_done=callback,
-                **additional_arguments,
+                **kwargs,
             )
 
 
@@ -143,7 +134,7 @@ class MultiFlowRunner(FlowRunner):
         self,
         trial_parameters: dict,
         workspace: str = 'workspace',
-        callback=None,
+        callback: Optional[Callable[..., None]] = None,
         **kwargs,
     ):
         """

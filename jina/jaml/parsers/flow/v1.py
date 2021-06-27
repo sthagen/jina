@@ -3,7 +3,7 @@ from typing import Dict, Any
 
 from ..base import VersionedYAMLParser
 from ....enums import PodRoleType
-from ....flow import Flow
+from .... import Flow
 from ....helper import expand_env_var, ArgNamespace
 from ....parsers import set_pod_parser, set_gateway_parser
 
@@ -35,11 +35,9 @@ class V1Parser(VersionedYAMLParser):
             pods:
               - name: pod0  # notice the change here, name is now an attribute
                 method: add  # by default method is always add, available: add, needs, inspect
-                uses: _pass
                 needs: gateway
               - name: pod1  # notice the change here, name is now an attribute
                 method: add  # by default method is always add, available: add, needs, inspect
-                uses: _pass
                 needs: gateway
               - method: inspect  # add an inspect node on pod1
               - method: needs  # let's try something new in Flow YAML v1: needs
@@ -56,16 +54,15 @@ class V1Parser(VersionedYAMLParser):
         :param data: flow yaml file loaded as python dict
         :return: the Flow YAML parser given the syntax version number
         """
-        envs = data.get('env', {})  # type: Dict[str, str]
         p = data.get('with', {})  # type: Dict[str, Any]
         a = p.pop('args') if 'args' in p else ()
         k = p.pop('kwargs') if 'kwargs' in p else {}
         # maybe there are some hanging kwargs in "parameters"
         tmp_a = (expand_env_var(v) for v in a)
         tmp_p = {kk: expand_env_var(vv) for kk, vv in {**k, **p}.items()}
-        obj = cls(*tmp_a, env=envs, **tmp_p)
+        obj = cls(*tmp_a, **tmp_p)
 
-        pp = data.get('pods', [])
+        pp = data.get('executors', data.get('pods', []))
         for pods in pp:
             p_pod_attr = {kk: expand_env_var(vv) for kk, vv in pods.items()}
             # in v1 YAML, flow is an optional argument
@@ -85,14 +82,11 @@ class V1Parser(VersionedYAMLParser):
         if data._version:
             r['version'] = data._version
 
-        if data._env:
-            r['env'] = data._env
-
         if data._kwargs:
             r['with'] = data._kwargs
 
         if data._pod_nodes:
-            r['pods'] = []
+            r['executors'] = []
 
         last_name = 'gateway'
         for k, v in data._pod_nodes.items():
@@ -116,5 +110,5 @@ class V1Parser(VersionedYAMLParser):
                 if t in kwargs:
                     kwargs.pop(t)
             last_name = kwargs['name']
-            r['pods'].append(kwargs)
+            r['executors'].append(kwargs)
         return r

@@ -1,6 +1,3 @@
-__copyright__ = "Copyright (c) 2020 Jina AI Limited. All rights reserved."
-__license__ = "Apache-2.0"
-
 import asyncio
 import functools
 import json
@@ -13,8 +10,8 @@ import threading
 import time
 import uuid
 import warnings
+
 from argparse import ArgumentParser, Namespace
-from contextlib import contextmanager
 from datetime import datetime
 from itertools import islice
 from types import SimpleNamespace
@@ -30,9 +27,6 @@ from typing import (
     Sequence,
     Iterable,
 )
-from urllib.request import Request, urlopen
-
-import numpy as np
 
 __all__ = [
     'batch_iterator',
@@ -45,17 +39,14 @@ __all__ = [
     'ArgNamespace',
     'is_valid_local_config_source',
     'cached_property',
-    'is_url',
     'typename',
     'get_public_ip',
     'get_internal_ip',
     'convert_tuple_to_list',
     'run_async',
     'deprecated_alias',
-    'deprecated_class',
+    'countdown',
 ]
-
-from jina.excepts import NotSupportedError
 
 
 def deprecated_alias(**aliases):
@@ -72,6 +63,7 @@ def deprecated_alias(**aliases):
     :param aliases: maps aliases to new arguments
     :return: wrapper
     """
+    from .excepts import NotSupportedError
 
     def _rename_kwargs(func_name: str, kwargs, aliases):
         """
@@ -129,55 +121,6 @@ def deprecated_alias(**aliases):
     return deco
 
 
-def deprecated_class(dep_class=None, new_class=None, custom_msg=None):
-    """
-    After applying `deprecated_class` the `dep_class` will only be an alias for the `new_class`.
-    Any code inside of `dep_class` will be completely overwritten.
-
-    For example:
-        .. highlight:: python
-        .. code-block:: python
-            @deprecated_class(new_class=NewClass)
-            @deprecated_class(new_class=NewClass, custom_msg="custom message")
-
-    :param dep_class: deprecated class
-    :param new_class: new class
-    :param custom_msg: a custom message to describe the new class
-    :return: wrapper
-    """
-
-    if not dep_class:
-        return functools.partial(
-            deprecated_class, new_class=new_class, custom_msg=custom_msg
-        )
-
-    new_init = new_class.__init__
-
-    @functools.wraps(dep_class)
-    def wrapper(*args, **kwargs):
-        """
-        Set wrapper function.
-
-        :param args: wrapper arguments
-        :param kwargs: wrapper key word arguments
-        :return: class instance of the new type.
-        """
-
-        warnings_msg = f'{dep_class.__name__} class is deprecated and will be removed in the next version. '
-        if new_class and not custom_msg:
-            warnings_msg += f'A new name of the class is {new_class.__name__}. '
-        if custom_msg:
-            warnings_msg += f'{custom_msg}'
-        warnings.warn(
-            warnings_msg,
-            DeprecationWarning,
-        )
-        return new_init(*args, **kwargs)
-
-    new_class.__init__ = wrapper
-    return new_class
-
-
 def get_readable_size(num_bytes: Union[int, float]) -> str:
     """
     Transform the bytes into readable value with different units (e.g. 1 KB, 20 MB, 30.1 GB).
@@ -196,33 +139,10 @@ def get_readable_size(num_bytes: Union[int, float]) -> str:
         return f'{num_bytes / (1024 ** 3):.1f} GB'
 
 
-def call_obj_fn(obj, fn: str):
-    """
-    Get a named attribute from an object; getattr(obj, 'fn') is equivalent to obj.fn.
-
-    :param obj: Target object.
-    :param fn: Desired attribute.
-    """
-    if obj is not None and hasattr(obj, fn):
-        getattr(obj, fn)()
-
-
-def touch_dir(base_dir: str) -> None:
-    """
-    Create a directory from given path if it doesn't exist.
-
-    :param base_dir: Path of target path.
-    """
-    if not os.path.exists(base_dir):
-        os.makedirs(base_dir)
-
-
 def batch_iterator(
     data: Iterable[Any],
     batch_size: int,
     axis: int = 0,
-    yield_slice: bool = False,
-    yield_dict: bool = False,
 ) -> Iterator[Any]:
     """
     Get an iterator of batches of data.
@@ -230,14 +150,12 @@ def batch_iterator(
     For example:
     .. highlight:: python
     .. code-block:: python
-            for batch in batch_iterator(data, batch_size, split_over_axis, yield_slice=yield_slice):
+            for req in batch_iterator(data, batch_size, split_over_axis):
                 # Do something with batch
 
     :param data: Data source.
     :param batch_size: Size of one batch.
     :param axis: Determine which axis to iterate for np.ndarray data.
-    :param yield_slice: Return tuple type of data if True else return np.ndarray type.
-    :param yield_dict: Return dict type of data if True else return tuple type.
     :yield: data
     :return: An Iterator of batch data.
     """
@@ -251,18 +169,12 @@ def batch_iterator(
         _d = data.ndim
         sl = [slice(None)] * _d
         if batch_size >= _l:
-            if yield_slice:
-                yield tuple(sl)
-            else:
-                yield data
+            yield data
             return
         for start in range(0, _l, batch_size):
             end = min(_l, start + batch_size)
             sl[axis] = slice(start, end)
-            if yield_slice:
-                yield tuple(sl)
-            else:
-                yield data[tuple(sl)]
+            yield data[tuple(sl)]
     elif isinstance(data, Sequence):
         if batch_size >= len(data):
             yield data
@@ -272,10 +184,7 @@ def batch_iterator(
     elif isinstance(data, Iterable):
         # as iterator, there is no way to know the length of it
         while True:
-            if yield_dict:
-                chunk = dict(islice(data, batch_size))
-            else:
-                chunk = tuple(islice(data, batch_size))
+            chunk = tuple(islice(data, batch_size))
             if not chunk:
                 return
             yield chunk
@@ -485,15 +394,17 @@ def random_port() -> Optional[int]:
                         pass
 
     _port = None
-    if 'JINA_RANDOM_PORTS' in os.environ:
+    if 'JINA_RANDOM_PORT_MIN' in os.environ or 'JINA_RANDOM_PORT_MAX' in os.environ:
         min_port = int(os.environ.get('JINA_RANDOM_PORT_MIN', '49153'))
         max_port = int(os.environ.get('JINA_RANDOM_PORT_MAX', '65535'))
-        for _port in np.random.permutation(range(min_port, max_port + 1)):
+        all_ports = list(range(min_port, max_port + 1))
+        random.shuffle(all_ports)
+        for _port in all_ports:
             if _get_port(_port) is not None:
                 break
         else:
             raise OSError(
-                f'Couldn\'t find an available port in [{min_port}, {max_port}].'
+                f'can not find an available port between [{min_port}, {max_port}].'
             )
     else:
         _port = _get_port()
@@ -640,61 +551,6 @@ _COLORS = {
 
 _RESET = '\033[0m'
 
-
-def build_url_regex_pattern():
-    """
-    Set up the regex pattern of URL.
-
-    :return: Regex pattern.
-    """
-    ul = '\u00a1-\uffff'  # Unicode letters range (must not be a raw string).
-
-    # IP patterns
-    ipv4_re = (
-        r'(?:25[0-5]|2[0-4]\d|[0-1]?\d?\d)(?:\.(?:25[0-5]|2[0-4]\d|[0-1]?\d?\d)){3}'
-    )
-    ipv6_re = r'\[[0-9a-f:.]+\]'  # (simple regex, validated later)
-
-    # Host patterns
-    hostname_re = (
-        r'[a-z' + ul + r'0-9](?:[a-z' + ul + r'0-9-]{0,61}[a-z' + ul + r'0-9])?'
-    )
-    # Max length for domain name labels is 63 characters per RFC 1034 sec. 3.1
-    domain_re = r'(?:\.(?!-)[a-z' + ul + r'0-9-]{1,63}(?<!-))*'
-    tld_re = (
-        r'\.'  # dot
-        r'(?!-)'  # can't start with a dash
-        r'(?:[a-z' + ul + '-]{2,63}'  # domain label
-        r'|xn--[a-z0-9]{1,59})'  # or punycode label
-        r'(?<!-)'  # can't end with a dash
-        r'\.?'  # may have a trailing dot
-    )
-    host_re = '(' + hostname_re + domain_re + tld_re + '|localhost)'
-
-    return re.compile(
-        r'^(?:[a-z0-9.+-]*)://'  # scheme is validated separately
-        r'(?:[^\s:@/]+(?::[^\s:@/]*)?@)?'  # user:pass authentication
-        r'(?:' + ipv4_re + '|' + ipv6_re + '|' + host_re + ')'
-        r'(?::\d{2,5})?'  # port
-        r'(?:[/?#][^\s]*)?'  # resource path
-        r'\Z',
-        re.IGNORECASE,
-    )
-
-
-url_pat = build_url_regex_pattern()
-
-
-def is_url(text):
-    """
-    Check if the text is URL.
-
-    :param text: The target text.
-    :return: True if text is URL else False.
-    """
-    return url_pat.match(text) is not None
-
-
 if os.name == 'nt':
     os.system('color')
 
@@ -812,36 +668,6 @@ class ArgNamespace:
         return p_args
 
     @staticmethod
-    def get_parsed_args(
-        kwargs: Dict[str, Union[str, int, bool]], parser: ArgumentParser
-    ) -> Tuple[List[str], Namespace, List[Any]]:
-        """
-        Get all parsed args info in a dict.
-
-        :param kwargs: dictionary of key-values to be converted
-        :param parser: the parser for building kwargs into a namespace
-        :return: argument namespace, positional arguments and unknown arguments
-        """
-        args = ArgNamespace.kwargs2list(kwargs)
-        try:
-            p_args, unknown_args = parser.parse_known_args(args)
-            if unknown_args:
-                from .logging import default_logger
-
-                default_logger.debug(
-                    f'parser {typename(parser)} can not '
-                    f'recognize the following args: {unknown_args}, '
-                    f'they are ignored. if you are using them from a global args (e.g. Flow), '
-                    f'then please ignore this message'
-                )
-        except SystemExit:
-            raise ValueError(
-                f'bad arguments "{args}" with parser {parser}, '
-                'you may want to double check your args '
-            )
-        return args, p_args, unknown_args
-
-    @staticmethod
     def get_non_defaults_args(
         args: Namespace, parser: ArgumentParser, taboo: Optional[Set[str]] = None
     ) -> Dict:
@@ -908,20 +734,25 @@ def get_full_version() -> Optional[Tuple[Dict, Dict]]:
 
     :return: Version information and environment variables
     """
-    from . import __version__, __proto_version__, __jina_env__
+    import os, grpc, zmq, numpy, google.protobuf, yaml, platform
+    from . import (
+        __version__,
+        __proto_version__,
+        __jina_env__,
+        __uptime__,
+        __unset_msg__,
+    )
     from google.protobuf.internal import api_implementation
-    import os, zmq, numpy, google.protobuf, grpc, yaml
     from grpc import _grpcio_metadata
-    from pkg_resources import resource_filename
-    import platform
-    from .logging import default_logger
+    from jina.logging.predefined import default_logger
+    from uuid import getnode
 
     try:
 
         info = {
             'jina': __version__,
             'jina-proto': __proto_version__,
-            'jina-vcs-tag': os.environ.get('JINA_VCS_VERSION', '(unset)'),
+            'jina-vcs-tag': os.environ.get('JINA_VCS_VERSION', __unset_msg__),
             'libzmq': zmq.zmq_version(),
             'pyzmq': numpy.__version__,
             'protobuf': google.protobuf.__version__,
@@ -934,9 +765,13 @@ def get_full_version() -> Optional[Tuple[Dict, Dict]]:
             'platform-version': platform.version(),
             'architecture': platform.machine(),
             'processor': platform.processor(),
-            'jina-resources': resource_filename('jina', 'resources'),
+            'uid': getnode(),
+            'session-id': str(random_uuid(use_uuid1=True)),
+            'uptime': __uptime__,
+            'ci-vendor': get_ci_vendor() or __unset_msg__,
         }
-        env_info = {k: os.getenv(k, '(unset)') for k in __jina_env__}
+
+        env_info = {k: os.getenv(k, __unset_msg__) for k in __jina_env__}
         full_version = info, env_info
     except Exception as e:
         default_logger.error(str(e))
@@ -1091,29 +926,36 @@ def get_internal_ip():
     return ip
 
 
-def get_public_ip():
+def get_public_ip(timeout: float = 0.3):
     """
     Return the public IP address of the gateway for connecting from other machine in the public network.
 
+    :param timeout: the seconds to wait until return None.
+
     :return: Public IP address.
+
+    .. warn::
+        Set :param:`timeout` to a large number will block the Flow.
+
     """
     import urllib.request
-
-    timeout = 0.5
 
     results = []
 
     def _get_ip(url):
         try:
-            with urllib.request.urlopen(url, timeout=timeout) as fp:
-                results.append(fp.read().decode('utf8'))
+            req = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0'})
+            with urllib.request.urlopen(req, timeout=timeout) as fp:
+                _ip = fp.read().decode()
+                results.append(_ip)
+
         except:
-            pass
+            pass  # intentionally ignored, public ip is not showed
 
     ip_server_list = [
         'https://api.ipify.org',
         'https://ident.me',
-        'https://ipinfo.io/ip',
+        'https://checkip.amazonaws.com/',
     ]
 
     threads = []
@@ -1213,7 +1055,7 @@ def run_async(func, *args, **kwargs):
             raise RuntimeError(
                 'you have an eventloop running but not using Jupyter/ipython, '
                 'this may mean you are using Jina with other integration? if so, then you '
-                'may want to use AsyncClient/AsyncFlow instead of Client/Flow. If not, then '
+                'may want to use Clien/Flow(asyncio=True). If not, then '
                 'please report this issue here: https://github.com/jina-ai/jina'
             )
     else:
@@ -1229,43 +1071,6 @@ def slugify(value):
     """
     s = str(value).strip().replace(' ', '_')
     return re.sub(r'(?u)[^-\w.]', '', s)
-
-
-@contextmanager
-def change_cwd(path):
-    """
-    Change the current working dir to ``path`` in a context and set it back to the original one when leaves the context.
-    Yields nothing
-
-    :param path: Target path.
-    :yields: nothing
-    """
-    curdir = os.getcwd()
-    os.chdir(path)
-    try:
-        yield
-    finally:
-        os.chdir(curdir)
-
-
-@contextmanager
-def change_env(key, val):
-    """
-    Change the environment of ``key`` to ``val`` in a context and set it back to the original one when leaves the context.
-
-    :param key: Old environment variable.
-    :param val: New environment variable.
-    :yields: nothing
-    """
-    old_var = os.environ.get(key, None)
-    os.environ[key] = val
-    try:
-        yield
-    finally:
-        if old_var:
-            os.environ[key] = old_var
-        else:
-            os.environ.pop(key)
 
 
 def is_yaml_filepath(val) -> bool:
@@ -1286,29 +1091,18 @@ def download_mermaid_url(mermaid_url, output) -> None:
     :param mermaid_url: The URL of the image.
     :param output: A filename specifying the name of the image to be created, the suffix svg/jpg determines the file type of the output image.
     """
+    from urllib.request import Request, urlopen
+
     try:
         req = Request(mermaid_url, headers={'User-Agent': 'Mozilla/5.0'})
         with open(output, 'wb') as fp:
             fp.write(urlopen(req).read())
     except:
-        from jina.logging import default_logger
+        from jina.logging.predefined import default_logger
 
         default_logger.error(
             'can not download image, please check your graph and the network connections'
         )
-
-
-def ding(req):
-    """Play a ding sound `on_done`, used in 2021 April fools day
-
-    # noqa: DAR101
-    """
-    import subprocess
-    from pkg_resources import resource_filename
-
-    soundfx = resource_filename('jina', '/'.join(('resources', 'soundfx', 'bell.mp3')))
-
-    subprocess.call(f'ffplay  -nodisp -autoexit {soundfx} >/dev/null 2>&1', shell=True)
 
 
 def find_request_binding(target):
@@ -1318,6 +1112,7 @@ def find_request_binding(target):
     :return: a dictionary with key as request type and value as method name
     """
     import ast, inspect
+    from . import __default_endpoint__
 
     res = {}
 
@@ -1328,9 +1123,8 @@ def find_request_binding(target):
             if isinstance(e, ast.Call) and e.func.id == 'requests':
                 req_name = e.keywords[0].value.s
             elif isinstance(e, ast.Name) and e.id == 'requests':
-                req_name = 'default'
+                req_name = __default_endpoint__
             if req_name:
-                req_name = _canonical_request_name(req_name)
                 if req_name in res:
                     raise ValueError(
                         f'you already bind `{res[req_name]}` with `{req_name}` request'
@@ -1344,10 +1138,86 @@ def find_request_binding(target):
     return res
 
 
-def _canonical_request_name(req_name: str):
-    """Return the canonical name of a request
-
-    :param req_name: the original request name
-    :return: canonical form of the request
+def dunder_get(_dict: Any, key: str) -> Any:
+    """Returns value for a specified dunderkey
+    A "dunderkey" is just a fieldname that may or may not contain
+    double underscores (dunderscores!) for referencing nested keys in
+    a dict. eg::
+         >>> data = {'a': {'b': 1}}
+         >>> dunder_get(data, 'a__b')
+         1
+    key 'b' can be referrenced as 'a__b'
+    :param _dict : (dict, list, struct or object) which we want to index into
+    :param key   : (str) that represents a first level or nested key in the dict
+    :return: (mixed) value corresponding to the key
     """
-    return req_name.lower().replace('request', '')
+
+    try:
+        part1, part2 = key.split('__', 1)
+    except ValueError:
+        part1, part2 = key, ''
+
+    try:
+        part1 = int(part1)  # parse int parameter
+    except ValueError:
+        pass
+
+    from google.protobuf.struct_pb2 import ListValue
+    from google.protobuf.struct_pb2 import Struct
+    from google.protobuf.pyext._message import MessageMapContainer
+
+    if isinstance(part1, int):
+        result = _dict[part1]
+    elif isinstance(_dict, (Iterable, ListValue)):
+        result = _dict[part1]
+    elif isinstance(_dict, (dict, Struct, MessageMapContainer)):
+        if part1 in _dict:
+            result = _dict[part1]
+        else:
+            result = None
+    else:
+        result = getattr(_dict, part1)
+
+    return dunder_get(result, part2) if part2 else result
+
+
+if False:
+    from fastapi import FastAPI
+
+
+def extend_rest_interface(app: 'FastAPI') -> 'FastAPI':
+    """Extend Jina built-in FastAPI instance with customized APIs, routing, etc.
+
+    :param app: the built-in FastAPI instance given by Jina
+    :return: the extended FastAPI instance
+
+    .. highlight:: python
+    .. code-block:: python
+
+        def extend_rest_interface(app: 'FastAPI'):
+
+            @app.get('/extension1')
+            async def root():
+                return {"message": "Hello World"}
+
+            return app
+    """
+    return app
+
+
+def get_ci_vendor() -> Optional[str]:
+    from jina import __resources_path__
+
+    with open(os.path.join(__resources_path__, 'ci-vendors.json')) as fp:
+        all_cis = json.load(fp)
+        for c in all_cis:
+            if isinstance(c['env'], str) and c['env'] in os.environ:
+                return c['constant']
+            elif isinstance(c['env'], dict):
+                for k, v in c['env'].items():
+                    if os.environ.get(k, None) == v:
+                        return c['constant']
+            elif isinstance(c['env'], list):
+                for k in c['env']:
+                    if k in os.environ:
+                        return c['constant']

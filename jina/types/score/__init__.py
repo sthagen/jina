@@ -67,8 +67,23 @@ class NamedScore(ProtoTypeMixin):
             raise BadNamedScoreType(
                 f'fail to construct a NamedScore from {score}'
             ) from ex
-
         self.set_attrs(**kwargs)
+
+    @property
+    def value(self) -> float:
+        """
+        Return the ``value`` of this NamedScore, the `id` of which this NamedScore is a score.
+        :return:: the score value
+        """
+        return self._pb_body.value
+
+    @value.setter
+    def value(self, val: float):
+        """
+        Set the ``value`` to :attr:`value`.
+        :param val: The score value to set
+        """
+        self._pb_body.value = val
 
     @property
     def ref_id(self) -> str:
@@ -87,6 +102,38 @@ class NamedScore(ProtoTypeMixin):
         self._pb_body.ref_id = val
 
     @property
+    def op_name(self) -> str:
+        """
+        Return the ``op_name`` of this NamedScore
+        :return:: the op_name
+        """
+        return self._pb_body.op_name
+
+    @op_name.setter
+    def op_name(self, val: str):
+        """
+        Set the ``op_name`` to :param: `val`.
+        :param val: The op_name value to set
+        """
+        self._pb_body.op_name = val
+
+    @property
+    def description(self) -> str:
+        """
+        Return the ``description`` of this NamedScore
+        :return:: the description
+        """
+        return self._pb_body.description
+
+    @description.setter
+    def description(self, val: str):
+        """
+        Set the ``description`` to :param: `val`.
+        :param val: The description value to set
+        """
+        self._pb_body.description = val
+
+    @property
     def operands(self) -> List['NamedScore']:
         """
         Returns list of nested NamedScore operands.
@@ -95,7 +142,7 @@ class NamedScore(ProtoTypeMixin):
         return [NamedScore(operand) for operand in self._pb_body.operands]
 
     def set_attrs(self, **kwargs):
-        """Udate Document fields with key-value specified in kwargs.
+        """Udate NamedScore fields with key-value specified in kwargs.
 
         :param kwargs: Key-value parameters to be set
         """

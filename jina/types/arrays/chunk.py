@@ -11,15 +11,19 @@ class ChunkArray(DocumentArray):
     :class:`ChunkArray` inherits from :class:`DocumentArray`.
     It's a subset of Documents.
 
-    :param docs_proto: List of sub-documents (i.e chunks) of `reference_doc`
-    :type docs_proto: :class:`Document`
+    :param doc_views: Set of sub-documents (i.e chunks) of `reference_doc`
     :param reference_doc: Reference :class:`Document` for the sub-documents
-    :type reference_doc: :class:`Document`
     """
 
-    def __init__(self, docs_proto, reference_doc: 'Document'):
-        super().__init__(docs_proto)
+    def __init__(self, doc_views, reference_doc: 'Document'):
+        """
+        Set constructor method.
+
+        :param doc_views: protobuf representation of the chunks
+        :param reference_doc: parent document
+        """
         self._ref_doc = reference_doc
+        super().__init__(doc_views)
 
     def append(self, document: 'Document', **kwargs) -> 'Document':
         """Add a sub-document (i.e chunk) to the current Document.
@@ -37,17 +41,16 @@ class ChunkArray(DocumentArray):
 
         from ..document import Document
 
-        c = self._docs_proto.add()
-        c.CopyFrom(document.proto)
-        chunk = Document(c)
+        chunk = Document(document, copy=True)
 
-        chunk.set_attrs(
+        chunk.set_attributes(
             parent_id=self._ref_doc.id, granularity=self.granularity, **kwargs
         )
 
         if not chunk.mime_type:
             chunk.mime_type = self._ref_doc.mime_type
         chunk.update_content_hash()
+        super().append(chunk)
         return chunk
 
     def extend(self, iterable: Iterable['Document']) -> None:
@@ -58,9 +61,6 @@ class ChunkArray(DocumentArray):
         """
         for doc in iterable:
             self.append(doc)
-        num_siblings = len(self)
-        for doc in self:
-            doc.siblings = num_siblings
 
     @property
     def reference_doc(self) -> 'Document':

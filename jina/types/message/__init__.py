@@ -4,12 +4,15 @@ import traceback
 from typing import Union, List, Optional
 
 from ..request import Request
+from ..request.control import ControlRequest
+from ..request.data import DataRequest
 from ... import __version__, __proto_version__
 from ...enums import CompressAlgo
 from ...excepts import MismatchedVersion
 from ...helper import colored
-from ...logging import default_logger
+from ...logging.predefined import default_logger
 from ...proto import jina_pb2
+from ...types.routing.table import RoutingTable
 
 if False:
     from ...executors import BaseExecutor
@@ -67,8 +70,19 @@ class Message:
             if isinstance(self.request, Request):
                 self.request._envelope = self.envelope
 
+            self.envelope.header.CopyFrom(self.request.header)
+
         if self.envelope.check_version:
             self._check_version()
+
+    @classmethod
+    def from_proto(cls, msg: 'jina_pb2.MessageProto'):
+        """Creates a new Message object from a given :class:`MessageProto` object.
+
+        :param msg: the to-be-copied message
+        :return: the new message object
+        """
+        return cls(msg.envelope, msg.request)
 
     @property
     def request(self) -> 'Request':
@@ -77,11 +91,14 @@ class Message:
 
         :return: request
         """
-        if self.envelope and isinstance(self._request, Request):
-            return self._request.as_typed_request(self.envelope.request_type)
-        else:
-            # when there is no envelope, just return a generic request
-            return self._request
+        if (
+            self.envelope
+            and isinstance(self._request, Request)
+            and not isinstance(self._request, DataRequest)
+            and not isinstance(self._request, ControlRequest)
+        ):
+            self._request = self._request.as_typed_request(self.envelope.request_type)
+        return self._request
 
     @request.setter
     def request(self, val: Union[bytes, 'jina_pb2.RequestProto']):
@@ -91,7 +108,12 @@ class Message:
         :param val: serialized Request
         """
         if isinstance(val, bytes):
-            self._request = Request(val, self.envelope)
+            self._request = Request(
+                val,
+                CompressAlgo.from_string(self.envelope.compression.algorithm)
+                if self.envelope
+                else None,
+            )
             self._size += sys.getsizeof(val)
         elif isinstance(val, (Request, jina_pb2.RequestProto)):
             self._request = val  # type: Union['Request', 'jina_pb2.RequestProto']
@@ -126,9 +148,7 @@ class Message:
 
         :return: boolean which states if data is requested
         """
-        return (
-            self.envelope.request_type != 'ControlRequest' or self.request.propagate
-        ) and self.envelope.request_type != 'DumpRequest'
+        return self.envelope.request_type == 'DataRequest'
 
     def _add_envelope(
         self,
@@ -140,6 +160,7 @@ class Message:
         compress: str = 'NONE',
         compress_min_bytes: int = 0,
         compress_min_ratio: float = 1.0,
+        routing_table: Optional[str] = None,
         *args,
         **kwargs,
     ) -> 'jina_pb2.EnvelopeProto':
@@ -159,6 +180,7 @@ class Message:
         :param compress: used compression algorithm
         :param compress_min_bytes: used for configuring compression
         :param compress_min_ratio: used for configuring compression
+        :param routing_table: routing graph filled by gateway
         :return: the resulted protobuf message
         """
         envelope = jina_pb2.EnvelopeProto()
@@ -200,6 +222,8 @@ class Message:
         envelope.compression.min_ratio = compress_min_ratio
         envelope.compression.min_bytes = compress_min_bytes
         envelope.timeout = 5000
+        if routing_table is not None:
+            envelope.routing_table.CopyFrom(RoutingTable(routing_table).proto)
         self._add_version(envelope)
         self._add_route(pod_name, identity, envelope)
         envelope.check_version = check_version
@@ -222,7 +246,7 @@ class Message:
 
     def _compress(self, data: bytes) -> bytes:
         # no further compression or post processing is required
-        if isinstance(self.request, Request) and not self.request.is_used:
+        if isinstance(self.request, Request) and not self.request.is_decompressed:
             return data
 
         # otherwise there are two cases

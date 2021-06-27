@@ -1,11 +1,9 @@
-from typing import Dict
+from jina import Executor, requests
 
-from jina.executors.crafters import BaseCrafter
-from jina.executors.decorators import single
 from jina.optimizers.parameters import IntegerParameter
 
 
-class DummyCrafter(BaseCrafter):
+class DummyCrafter(Executor):
     DEFAULT_OPTIMIZATION_PARAMETER = [
         IntegerParameter(
             executor_name='DummyCrafter',
@@ -48,10 +46,8 @@ class DummyCrafter(BaseCrafter):
             and self.param3 == DummyCrafter.GOOD_PARAM_3
         )
 
-    @single
-    def craft(self, text, *args, **kwargs) -> Dict:
-
-        if self.good_params:
-            return {'text': text}
-        else:
-            return {'text': ''}
+    @requests
+    def craft(self, docs, *args, **kwargs):
+        for doc in docs:
+            if not self.good_params:
+                doc.text = ''

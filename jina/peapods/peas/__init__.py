@@ -1,21 +1,20 @@
 import argparse
+import multiprocessing
 import os
-from typing import Type
+import threading
+from typing import Any, Tuple
 
-from .helper import _get_event, _make_or_event, PeaType
-from ... import __stop_msg__, __ready_msg__, __default_host__
-from ...enums import PeaRoleType, RuntimeBackendType
-from ...excepts import RuntimeFailToStart, RuntimeTerminated
+from .helper import _get_event, ConditionalEvent
+from ... import __stop_msg__, __ready_msg__, __default_host__, __docker_host__
+from ...enums import PeaRoleType, RuntimeBackendType, SocketType, GatewayProtocolType
+from ...excepts import RuntimeFailToStart
 from ...helper import typename
 from ...logging.logger import JinaLogger
 
 __all__ = ['BasePea']
 
-if False:
-    from ..runtimes.base import BaseRuntime
 
-
-class BasePea(metaclass=PeaType):
+class BasePea:
     """
     :class:`BasePea` is a thread/process- container of :class:`BaseRuntime`. It leverages :class:`threading.Thread`
     or :class:`multiprocessing.Process` to manage the lifecycle of a :class:`BaseRuntime` object in a robust way.
@@ -23,18 +22,32 @@ class BasePea(metaclass=PeaType):
     A :class:`BasePea` must be equipped with a proper :class:`Runtime` class to work.
     """
 
-    runtime_cls = None  # type: Type['BaseRuntime']
-
     def __init__(self, args: 'argparse.Namespace'):
         super().__init__()  #: required here to call process/thread __init__
+        self.worker = {
+            RuntimeBackendType.THREAD: threading.Thread,
+            RuntimeBackendType.PROCESS: multiprocessing.Process,
+        }.get(getattr(args, 'runtime_backend', RuntimeBackendType.THREAD))(
+            target=self.run
+        )
         self.args = args
         self.daemon = args.daemon  #: required here to set process/thread daemon
 
         self.name = self.args.name or self.__class__.__name__
-        self.is_ready = _get_event(self)
-        self.is_shutdown = _get_event(self)
-        self.ready_or_shutdown = _make_or_event(self, self.is_ready, self.is_shutdown)
+        self.is_ready = _get_event(self.worker)
+        self.is_shutdown = _get_event(self.worker)
+        self.ready_or_shutdown = ConditionalEvent(
+            getattr(args, 'runtime_backend', RuntimeBackendType.THREAD),
+            events_list=[self.is_ready, self.is_shutdown],
+        )
         self.logger = JinaLogger(self.name, **vars(self.args))
+
+        if self.args.runtime_backend == RuntimeBackendType.THREAD:
+            self.logger.warning(
+                f' Using Thread as runtime backend is not recommended for production purposes. It is '
+                f'just supposed to be used for easier debugging. Besides the performance considerations, it is'
+                f'specially dangerous to mix `Executors` running in different types of `RuntimeBackends`.'
+            )
 
         self._envs = {'JINA_POD_NAME': self.name, 'JINA_LOG_ID': self.args.identity}
         if self.args.quiet:
@@ -42,17 +55,89 @@ class BasePea(metaclass=PeaType):
         if self.args.env:
             self._envs.update(self.args.env)
 
-        try:
-            self.runtime = self._get_runtime_cls()(self.args)  # type: 'BaseRuntime'
-        except Exception as ex:
-            self.logger.error(
-                f'{ex!r} during {self.runtime_cls.__init__!r}'
-                + f'\n add "--quiet-error" to suppress the exception details'
-                if not self.args.quiet_error
-                else '',
-                exc_info=not self.args.quiet_error,
+        # arguments needed to create `runtime` and communicate with it in the `run` in the stack of the new process
+        # or thread. Control address from Zmqlet has some randomness and therefore we need to make sure Pea knows
+        # control address of runtime
+        self.runtime_cls, self._is_remote_controlled = self._get_runtime_cls()
+        self._timeout_ctrl = self.args.timeout_ctrl
+        self.set_ctrl_adrr()
+
+    def set_ctrl_adrr(self):
+        """Sets control address for different runtimes"""
+        # This logic must be improved specially when it comes to naming. It is about relative local/remote position
+        # between the runtime and the `ZEDRuntime` it may control
+        from ..zmq import Zmqlet
+        from ..runtimes.jinad import JinadRuntime
+        from ..runtimes.container import ContainerRuntime
+
+        if self.runtime_cls == ContainerRuntime:
+            # Checks if caller (JinaD) has set `docker_kwargs['extra_hosts']` to __docker_host__.
+            # If yes, set host_ctrl to __docker_host__, else keep it as __default_host__
+            ctrl_host = (
+                __docker_host__
+                if self.args.docker_kwargs
+                and 'extra_hosts' in self.args.docker_kwargs
+                and __docker_host__ in self.args.docker_kwargs['extra_hosts']
+                else self.args.host
             )
-            raise RuntimeFailToStart from ex
+            self._zed_runtime_ctrl_address = Zmqlet.get_ctrl_address(
+                ctrl_host, self.args.port_ctrl, self.args.ctrl_with_ipc
+            )[0]
+        else:
+            self._zed_runtime_ctrl_address = Zmqlet.get_ctrl_address(
+                self.args.host, self.args.port_ctrl, self.args.ctrl_with_ipc
+            )[0]
+
+        self._local_runtime_ctrl_address = (
+            Zmqlet.get_ctrl_address(None, None, True)[0]
+            if self.runtime_cls == JinadRuntime
+            else self._zed_runtime_ctrl_address
+        )
+
+    def start(self):
+        """Start the Pea.
+        This method calls :meth:`start` in :class:`threading.Thread` or :class:`multiprocesssing.Process`.
+        .. #noqa: DAR201
+        """
+        self.worker.start()
+        if not self.args.noblock_on_start:
+            self.wait_start_success()
+        return self
+
+    def join(self, *args, **kwargs):
+        """Joins the Pea.
+        This method calls :meth:`join` in :class:`threading.Thread` or :class:`multiprocesssing.Process`.
+
+        :param args: extra positional arguments to pass to join
+        :param kwargs: extra keyword arguments to pass to join
+        """
+        if self.worker.is_alive():
+            self.worker.join(*args, **kwargs)
+
+    def terminate(self):
+        """Terminate the Pea.
+        This method calls :meth:`terminate` in :class:`threading.Thread` or :class:`multiprocesssing.Process`.
+        """
+        if hasattr(self.worker, 'terminate'):
+            self.worker.terminate()
+
+    def _build_runtime(self):
+        """
+        Instantiates the runtime object
+
+        :return: the runtime object
+        """
+        # This is due to the fact that JinadRuntime instantiates a Zmq server at local_ctrl_addr that will itself
+        # send ctrl command
+        # (TODO: Joan) Fix that in _wait_for_cancel from async runtime
+        from ..runtimes.jinad import JinadRuntime
+
+        ctrl_addr = (
+            self._local_runtime_ctrl_address
+            if self.runtime_cls == JinadRuntime
+            else self._zed_runtime_ctrl_address
+        )
+        return self.runtime_cls(self.args, ctrl_addr=ctrl_addr)
 
     def run(self):
         """Method representing the :class:`BaseRuntime` activity.
@@ -63,14 +148,12 @@ class BasePea(metaclass=PeaType):
             :meth:`run` is running in subprocess/thread, the exception can not be propagated to the main process.
             Hence, please do not raise any exception here.
         """
-        self._set_envs()
-
-        self.logger.info(f'starting {typename(self.runtime)}...')
         try:
-            self.runtime.setup()
+            self._set_envs()
+            runtime = self._build_runtime()
         except Exception as ex:
             self.logger.error(
-                f'{ex!r} during {self.runtime.setup!r}'
+                f'{ex!r} during {self.runtime_cls!r} initialization'
                 + f'\n add "--quiet-error" to suppress the exception details'
                 if not self.args.quiet_error
                 else '',
@@ -78,47 +161,38 @@ class BasePea(metaclass=PeaType):
             )
         else:
             self.is_ready.set()
-            try:
-                self.runtime.run_forever()
-            except RuntimeTerminated:
-                self.logger.info(f'{self.runtime!r} is end')
-            except KeyboardInterrupt:
-                self.logger.info(f'{self.runtime!r} is interrupted by user')
-            except (Exception, SystemError) as ex:
-                self.logger.error(
-                    f'{ex!r} during {self.runtime.run_forever!r}'
-                    + f'\n add "--quiet-error" to suppress the exception details'
-                    if not self.args.quiet_error
-                    else '',
-                    exc_info=not self.args.quiet_error,
-                )
-
-            try:
-                self.runtime.teardown()
-            except Exception as ex:
-                self.logger.error(
-                    f'{ex!r} during {self.runtime.teardown!r}'
-                    + f'\n add "--quiet-error" to suppress the exception details'
-                    if not self.args.quiet_error
-                    else '',
-                    exc_info=not self.args.quiet_error,
-                )
+            with runtime:
+                runtime.run_forever()
         finally:
             self.is_shutdown.set()
             self.is_ready.clear()
             self._unset_envs()
 
-    def start(self):
-        """Start the Pea.
+    def activate_runtime(self):
+        """ Send activate control message. """
+        if self._is_dealer:
+            from ..zmq import send_ctrl_message
 
-        This method overrides :meth:`start` in :class:`threading.Thread` or :class:`multiprocesssing.Process`.
-        """
+            send_ctrl_message(
+                self._zed_runtime_ctrl_address, 'ACTIVATE', timeout=self._timeout_ctrl
+            )
 
-        super().start()  #: required here to call process/thread method
-        if not self.args.noblock_on_start:
-            self.wait_start_success()
+    def _deactivate_runtime(self):
+        """Send deactivate control message. """
+        if self._is_dealer:
+            from ..zmq import send_ctrl_message
 
-        return self
+            send_ctrl_message(
+                self._zed_runtime_ctrl_address, 'DEACTIVATE', timeout=self._timeout_ctrl
+            )
+
+    def _cancel_runtime(self):
+        """Send terminate control message."""
+        from ..zmq import send_ctrl_message
+
+        send_ctrl_message(
+            self._local_runtime_ctrl_address, 'TERMINATE', timeout=self._timeout_ctrl
+        )
 
     def wait_start_success(self):
         """Block until all peas starts successfully.
@@ -130,20 +204,16 @@ class BasePea(metaclass=PeaType):
             _timeout = None
         else:
             _timeout /= 1e3
-        if self.ready_or_shutdown.wait(_timeout):
+        if self.ready_or_shutdown.event.wait(_timeout):
             if self.is_shutdown.is_set():
                 # return too early and the shutdown is set, means something fails!!
-                if self.args.quiet_error:
-                    self.logger.critical(
-                        f'fail to start {self!r} because {self.runtime!r} throws some exception, '
-                        f'remove "--quiet-error" to see the exception stack in details'
-                    )
                 raise RuntimeFailToStart
             else:
-                self.logger.success(__ready_msg__)
+                self.logger.debug(__ready_msg__)
         else:
+            _timeout = _timeout or -1
             self.logger.warning(
-                f'{self.runtime!r} timeout after waiting for {self.args.timeout_ready}ms, '
+                f'{self.runtime_cls!r} timeout after waiting for {self.args.timeout_ready}ms, '
                 f'if your executor takes time to load, you may increase --timeout-ready'
             )
             self.close()
@@ -151,25 +221,27 @@ class BasePea(metaclass=PeaType):
                 f'{typename(self)}:{self.name} can not be initialized after {_timeout * 1e3}ms'
             )
 
+    @property
+    def _is_dealer(self):
+        """Return true if this `Pea` must act as a Dealer responding to a Router
+        .. # noqa: DAR201
+        """
+        return self.args.socket_in == SocketType.DEALER_CONNECT
+
     def close(self) -> None:
         """Close the Pea
 
         This method makes sure that the `Process/thread` is properly finished and its resources properly released
         """
-        # wait 0.1s for the process/thread to end naturally, in this case no "cancel" is required this is required for
-        # the is case where in subprocess, runtime.setup() fails and _finally() is not yet executed, BUT close() in the
-        # main process is calling runtime.cancel(), which is completely unnecessary as runtime.run_forever() is not
-        # started yet.
-        self.join(0.1)
-
         # if that 1s is not enough, it means the process/thread is still in forever loop, cancel it
         if self.is_ready.is_set() and not self.is_shutdown.is_set():
             try:
-                self.runtime.cancel()
+                self._deactivate_runtime()
+                self._cancel_runtime()
                 self.is_shutdown.wait()
             except Exception as ex:
                 self.logger.error(
-                    f'{ex!r} during {self.runtime.cancel!r}'
+                    f'{ex!r} during {self._deactivate_runtime!r}'
                     + f'\n add "--quiet-error" to suppress the exception details'
                     if not self.args.quiet_error
                     else '',
@@ -179,8 +251,11 @@ class BasePea(metaclass=PeaType):
             # if it is not daemon, block until the process/thread finish work
             if not self.args.daemon:
                 self.join()
+        else:
+            # if it fails to start, the process will hang at `join`
+            self.terminate()
 
-        self.logger.success(__stop_msg__)
+        self.logger.debug(__stop_msg__)
         self.logger.close()
 
     def _set_envs(self):
@@ -200,7 +275,7 @@ class BasePea(metaclass=PeaType):
                     'environment variables should not be set when runtime="thread".'
                 )
             else:
-                os.environ.update(self._envs)
+                os.environ.update({k: str(v) for k, v in self._envs.items()})
 
     def _unset_envs(self):
         if self._envs and self.args.runtime_backend != RuntimeBackendType.THREAD:
@@ -213,22 +288,41 @@ class BasePea(metaclass=PeaType):
     def __exit__(self, exc_type, exc_val, exc_tb):
         self.close()
 
-    def _get_runtime_cls(self) -> Type['BaseRuntime']:
-        v = self.runtime_cls
-        if not self.runtime_cls:
-            if self.args.host != __default_host__:
-                self.args.runtime_cls = 'JinadRuntime'
-            if self.args.runtime_cls == 'ZEDRuntime' and self.args.uses.startswith(
-                'docker://'
-            ):
-                self.args.runtime_cls = 'ContainerRuntime'
+    def _get_runtime_cls(self) -> Tuple[Any, bool]:
+        is_remote_controlled = False
+        if self.args.host != __default_host__ and not self.args.disable_remote:
+            self.args.runtime_cls = 'JinadRuntime'
+            # NOTE: remote pea would also create a remote workspace which might take alot of time.
+            # setting it to -1 so that wait_start_success doesn't fail
+            self.args.timeout_ready = -1
+            is_remote_controlled = True
+        if self.args.runtime_cls == 'ZEDRuntime' and self.args.uses.startswith(
+            'docker://'
+        ):
+            self.args.runtime_cls = 'ContainerRuntime'
+        if hasattr(self.args, 'protocol'):
+            self.args.runtime_cls = {
+                GatewayProtocolType.GRPC: 'GRPCRuntime',
+                GatewayProtocolType.WEBSOCKET: 'WebSocketRuntime',
+                GatewayProtocolType.HTTP: 'HTTPRuntime',
+            }[self.args.protocol]
+        from ..runtimes import get_runtime
 
-            from ..runtimes import get_runtime
-
-            v = get_runtime(self.args.runtime_cls)
-        return v
+        v = get_runtime(self.args.runtime_cls)
+        return v, is_remote_controlled
 
     @property
     def role(self) -> 'PeaRoleType':
-        """Get the role of this pea in a pod"""
+        """Get the role of this pea in a pod
+
+
+        .. #noqa: DAR201"""
         return self.args.pea_role
+
+    @property
+    def _is_inner_pea(self) -> bool:
+        """Determine whether this is a inner pea or a head/tail
+
+
+        .. #noqa: DAR201"""
+        return self.role is PeaRoleType.SINGLETON or self.role is PeaRoleType.PARALLEL

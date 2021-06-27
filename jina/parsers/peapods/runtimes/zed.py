@@ -1,10 +1,10 @@
 """Argparser module for ZED runtime"""
 import argparse
 
-from ...helper import add_arg_group, _SHOW_ALL_ARGS
+from ...helper import add_arg_group, _SHOW_ALL_ARGS, KVAppendAction
 from .... import __default_host__
-from ....enums import OnErrorStrategy, SocketType
 from .... import helper
+from ....enums import OnErrorStrategy, SocketType
 
 
 def mixin_zed_runtime_parser(parser):
@@ -13,25 +13,41 @@ def mixin_zed_runtime_parser(parser):
     """
 
     gp = add_arg_group(parser, title='ZEDRuntime')
+    from jina import __default_executor__
 
     gp.add_argument(
         '--uses',
         type=str,
-        default='_pass',
+        default=__default_executor__,
         help='''
-            The config of the executor, it could be one of the followings:
-            * an Executor-level YAML file path (.yml, .yaml, .jaml)
-            * a name of a class inherited from `jina.Executor`
-            * a docker image (must start with `docker://`)
-            * builtin executors, e.g. `_pass`, `_logforward`, `_merge`
-            * the string literal of a YAML config (must start with `!`)
-            * the string literal of a JSON config
-            * the string literal of a YAML driver config (must start with `- !!`)
-            
-            When use it under Python, one can use the following values additionally:
-            - a Python dict that represents the config
-            - a text file stream has `.read()` interface
-            ''',
+        The config of the executor, it could be one of the followings:
+        * an Executor-level YAML file path (.yml, .yaml, .jaml)
+        * a docker image (must start with `docker://`)
+        * the string literal of a YAML config (must start with `!` or `jtype: `)
+        * the string literal of a JSON config
+
+        When use it under Python, one can use the following values additionally:
+        - a Python dict that represents the config
+        - a text file stream has `.read()` interface
+        ''',
+    )
+    gp.add_argument(
+        '--override-with',
+        action=KVAppendAction,
+        metavar='KEY: VALUE',
+        nargs='*',
+        help='''
+    Dictionary of keyword arguments that will override the default `with configuration` provided to the executor in `uses`
+    ''',
+    )
+    gp.add_argument(
+        '--override-metas',
+        action=KVAppendAction,
+        metavar='KEY: VALUE',
+        nargs='*',
+        help='''
+    Dictionary of keyword arguments that will override the default `metas configuration` provided to the executor in `uses`
+    ''',
     )
     gp.add_argument(
         '--py-modules',
@@ -89,29 +105,6 @@ reverse order. That is, if `__init__.py` depends on `A.py`, which again depends 
     )
 
     gp.add_argument(
-        '--load-interval',
-        type=int,
-        default=-1,
-        help='Reload the Executor in the Pod on every n seconds. '
-        '-1 or 0 means do not reload. ',
-    )
-
-    gp.add_argument(
-        '--dump-interval',
-        type=int,
-        default=240,
-        help='Serialize the Executor in the Pod every n seconds if model changes. '
-        '-1 means --read-only. ',
-    )
-    gp.add_argument(
-        '--read-only',
-        action='store_true',
-        default=False,
-        help='If set, do not allow the pod to modify the model, '
-        'dump_interval will be ignored',
-    )
-
-    gp.add_argument(
         '--memory-hwm',
         type=int,
         default=-1,
@@ -127,9 +120,8 @@ reverse order. That is, if `__init__.py` depends on `A.py`, which again depends 
         help='''
 The skip strategy on exceptions.
 
-- IGNORE: Ignore it, keep running all Drivers & Executors logics in the sequel flow
-- SKIP_EXECUTOR: Skip all Executors in the sequel, but drivers are still called
-- SKIP_HANDLE: Skip all Drivers & Executors in the sequel, only `pre_hook` and `post_hook` are called
+- IGNORE: Ignore it, keep running all Executors in the sequel flow
+- SKIP_HANDLE: Skip all Executors in the sequel, only `pre_hook` and `post_hook` are called
 - THROW_EARLY: Immediately throw the exception, the sequel flow will not be running at all
 
 Note, `IGNORE`, `SKIP_EXECUTOR` and `SKIP_HANDLE` do not guarantee the success execution in the sequel flow. If something
@@ -142,6 +134,33 @@ is wrong in the upstream, it is hard to carry this exception and moving forward 
         type=int,
         default=0,
         help='the number of messages expected from upstream, 0 and 1 means single part'
+        if _SHOW_ALL_ARGS
+        else argparse.SUPPRESS,
+    )
+
+    parser.add_argument(
+        '--dynamic-routing',
+        action='store_true',
+        default=True,
+        help='The Pod will setup the socket types of the HeadPea and TailPea depending on this argument.'
+        if _SHOW_ALL_ARGS
+        else argparse.SUPPRESS,
+    )
+
+    gp.add_argument(
+        '--dynamic-routing-out',
+        action='store_true',
+        default=False,
+        help='Tells if ZEDRuntime should respect routing graph for outgoing traffic.'
+        if _SHOW_ALL_ARGS
+        else argparse.SUPPRESS,
+    )
+
+    gp.add_argument(
+        '--dynamic-routing-in',
+        action='store_true',
+        default=False,
+        help='Tells if ZEDRuntime should handle incoming traffic as dynamic routing.'
         if _SHOW_ALL_ARGS
         else argparse.SUPPRESS,
     )
