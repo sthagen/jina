@@ -3,11 +3,11 @@ import time
 
 import pytest
 
-from jina.excepts import RuntimeFailToStart
+from jina.excepts import RuntimeFailToStart, RuntimeRunForeverEarlyError
 from jina.executors import BaseExecutor
-from jina.parsers import set_pea_parser
+from jina.parsers import set_gateway_parser, set_pea_parser
 from jina.peapods import Pea
-from jina.peapods.runtimes.base import BaseRuntime
+from jina.peapods.runtimes.zmq.zed import ZEDRuntime
 
 
 def bad_func(*args, **kwargs):
@@ -18,13 +18,12 @@ def test_base_pea_with_runtime_bad_init(mocker):
     class Pea1(Pea):
         def __init__(self, args):
             super().__init__(args)
-            self.runtime_cls = BaseRuntime
 
     arg = set_pea_parser().parse_args(['--runtime-backend', 'thread'])
-    mocker.patch.object(BaseRuntime, '__init__', bad_func)
-    teardown_spy = mocker.spy(BaseRuntime, 'teardown')
+    mocker.patch.object(ZEDRuntime, '__init__', bad_func)
+    teardown_spy = mocker.spy(ZEDRuntime, 'teardown')
     cancel_spy = mocker.spy(Pea, '_cancel_runtime')
-    run_spy = mocker.spy(BaseRuntime, 'run_forever')
+    run_spy = mocker.spy(ZEDRuntime, 'run_forever')
 
     with pytest.raises(RuntimeFailToStart):
         with Pea1(arg):
@@ -37,39 +36,72 @@ def test_base_pea_with_runtime_bad_init(mocker):
     cancel_spy.assert_not_called()
 
 
-def test_base_pea_with_runtime_bad_run_forever(mocker):
+@pytest.mark.slow
+def test_base_pea_with_runtime_bad_run_forever_after_ready(mocker):
     class Pea1(Pea):
         def __init__(self, args):
             super().__init__(args)
-            self.runtime_cls = BaseRuntime
+            self.runtime_cls = ZEDRuntime
+
+    def mock_run_forever(runtime):
+        runtime.is_ready_event.set()
+        bad_func()
 
     arg = set_pea_parser().parse_args(['--runtime-backend', 'thread'])
-    mocker.patch.object(BaseRuntime, 'run_forever', bad_func)
-    teardown_spy = mocker.spy(BaseRuntime, 'teardown')
+    mocker.patch.object(ZEDRuntime, 'run_forever', mock_run_forever)
+    teardown_spy = mocker.spy(ZEDRuntime, 'teardown')
     cancel_spy = mocker.spy(Pea, '_cancel_runtime')
-    run_spy = mocker.spy(BaseRuntime, 'run_forever')
+    run_spy = mocker.spy(ZEDRuntime, 'run_forever')
 
     with Pea1(arg):
         pass
 
     # teardown should be called, cancel should not be called
-
     teardown_spy.assert_called()
     run_spy.assert_called()
     cancel_spy.assert_called()
 
 
+@pytest.mark.slow
+def test_base_pea_with_runtime_bad_run_forever_before_ready(mocker):
+    class Pea1(Pea):
+        def __init__(self, args):
+            super().__init__(args)
+
+    def mock_run_forever(runtime):
+        bad_func()
+
+    arg = set_pea_parser().parse_args(['--runtime-backend', 'thread'])
+    mocker.patch.object(ZEDRuntime, 'run_forever', mock_run_forever)
+    teardown_spy = mocker.spy(ZEDRuntime, 'teardown')
+    cancel_spy = mocker.spy(Pea, '_cancel_runtime')
+    run_spy = mocker.spy(ZEDRuntime, 'run_forever')
+
+    with pytest.raises(RuntimeRunForeverEarlyError):
+        with Pea1(arg):
+            pass
+
+    # teardown should be called, cancel should not be called
+    teardown_spy.assert_called()
+    run_spy.assert_called()
+    cancel_spy.assert_not_called()
+
+
+@pytest.mark.slow
 def test_base_pea_with_runtime_bad_teardown(mocker):
     class Pea1(Pea):
         def __init__(self, args):
             super().__init__(args)
-            self.runtime_cls = BaseRuntime
 
-    mocker.patch.object(BaseRuntime, 'run_forever', lambda x: time.sleep(3))
-    mocker.patch.object(BaseRuntime, 'teardown', lambda x: bad_func)
-    teardown_spy = mocker.spy(BaseRuntime, 'teardown')
+    def mock_run_forever(runtime):
+        runtime.is_ready_event.set()
+        time.sleep(3)
+
+    mocker.patch.object(ZEDRuntime, 'run_forever', mock_run_forever)
+    mocker.patch.object(ZEDRuntime, 'teardown', lambda x: bad_func)
+    teardown_spy = mocker.spy(ZEDRuntime, 'teardown')
     cancel_spy = mocker.spy(Pea, '_cancel_runtime')
-    run_spy = mocker.spy(BaseRuntime, 'run_forever')
+    run_spy = mocker.spy(ZEDRuntime, 'run_forever')
 
     arg = set_pea_parser().parse_args(['--runtime-backend', 'thread'])
     with Pea1(arg):
@@ -86,17 +118,21 @@ def test_base_pea_with_runtime_bad_cancel(mocker):
     class Pea1(Pea):
         def __init__(self, args):
             super().__init__(args)
-            self.runtime_cls = BaseRuntime
 
-    mocker.patch.object(BaseRuntime, 'run_forever', lambda x: time.sleep(3))
+    def mock_run_forever(runtime):
+        runtime.is_ready_event.set()
+        time.sleep(3)
+
+    mocker.patch.object(ZEDRuntime, 'run_forever', mock_run_forever)
     mocker.patch.object(Pea, '_cancel_runtime', bad_func)
 
-    teardown_spy = mocker.spy(BaseRuntime, 'teardown')
+    teardown_spy = mocker.spy(ZEDRuntime, 'teardown')
     cancel_spy = mocker.spy(Pea, '_cancel_runtime')
-    run_spy = mocker.spy(BaseRuntime, 'run_forever')
+    run_spy = mocker.spy(ZEDRuntime, 'run_forever')
 
     arg = set_pea_parser().parse_args(['--runtime-backend', 'thread'])
     with Pea1(arg):
+        time.sleep(0.1)
         pass
 
     teardown_spy.assert_called()
@@ -179,3 +215,26 @@ def test_pea_runtime_env_setting_in_thread(fake_env):
     assert 'key_parent' in os.environ
 
     os.unsetenv('key_parent')
+
+
+@pytest.mark.parametrize(
+    'protocol, expected',
+    [
+        ('grpc', 'GRPCRuntime'),
+        ('websocket', 'WebSocketRuntime'),
+        ('http', 'HTTPRuntime'),
+    ],
+)
+def test_gateway_args(protocol, expected):
+    args = set_gateway_parser().parse_args(
+        [
+            '--host',
+            'jina-custom-gateway',
+            '--port-expose',
+            '23456',
+            '--protocol',
+            protocol,
+        ]
+    )
+    p = Pea(args)
+    assert p.runtime_cls.__name__ == expected

@@ -25,6 +25,7 @@ from ..helper import (
     typename,
     ArgNamespace,
     download_mermaid_url,
+    CatchAllCleanupContextManager,
 )
 from ..jaml import JAMLCompatible
 from ..logging.logger import JinaLogger
@@ -86,7 +87,7 @@ class Flow(PostMixin, JAMLCompatible, ExitStack, metaclass=FlowType):
     @overload
     def __init__(
         self,
-        compress: Optional[str] = 'LZ4',
+        compress: Optional[str] = 'NONE',
         compress_min_bytes: Optional[int] = 1024,
         compress_min_ratio: Optional[float] = 1.1,
         cors: Optional[bool] = False,
@@ -903,25 +904,6 @@ class Flow(PostMixin, JAMLCompatible, ExitStack, metaclass=FlowType):
         return self.build(*args, **kwargs)
 
     def __enter__(self):
-        class CatchAllCleanupContextManager:
-            """
-            This context manager guarantees, that the :method:``__exit__`` of the
-            sub context is called, even when there is an Exception in the
-            :method:``__enter__``.
-
-            :param sub_context: The context, that should be taken care of.
-            """
-
-            def __init__(self, sub_context):
-                self.sub_context = sub_context
-
-            def __enter__(self):
-                pass
-
-            def __exit__(self, exc_type, exc_val, exc_tb):
-                if exc_type is not None:
-                    self.sub_context.__exit__(exc_type, exc_val, exc_tb)
-
         with CatchAllCleanupContextManager(self):
             return self.start()
 
@@ -1106,12 +1088,10 @@ class Flow(PostMixin, JAMLCompatible, ExitStack, metaclass=FlowType):
         for node, v in self._pod_nodes.items():
             ed_str = str(v.head_args.socket_in).split('_')[0]
             for need in sorted(v.needs):
-                edge_str = ''
                 if need in self._pod_nodes:
                     st_str = str(self._pod_nodes[need].tail_args.socket_out).split('_')[
                         0
                     ]
-                    edge_str = f'|{st_str}-{ed_str}|'
 
                 _s = start_repl.get(need, (need, f'({need})'))
                 _e = end_repl.get(node, (node, f'({node})'))
@@ -1131,7 +1111,7 @@ class Flow(PostMixin, JAMLCompatible, ExitStack, metaclass=FlowType):
                     line_st = '-.->'
 
                 mermaid_graph.append(
-                    f'{_s[0]}{_s[1]}:::{str(_s_role)} {line_st} {edge_str}{_e[0]}{_e[1]}:::{str(_e_role)}'
+                    f'{_s[0]}{_s[1]}:::{str(_s_role)} {line_st} {_e[0]}{_e[1]}:::{str(_e_role)}'
                 )
         mermaid_graph.append(
             f'classDef {str(PodRoleType.POD)} fill:#32C8CD,stroke:#009999'

@@ -46,6 +46,10 @@ __all__ = [
     'run_async',
     'deprecated_alias',
     'countdown',
+    'CatchAllCleanupContextManager',
+    'download_mermaid_url',
+    'get_readable_size',
+    'get_or_reuse_loop',
 ]
 
 
@@ -812,16 +816,16 @@ def format_full_version_info(info: Dict, env_info: Dict) -> str:
 
 
 def _use_uvloop():
-    from .importer import ImportExtensions
-
-    with ImportExtensions(
-        required=False,
-        help_text='Jina uses uvloop to manage events and sockets, '
-        'it often yields better performance than builtin asyncio',
-    ):
+    if 'JINA_DISABLE_UVLOOP' in os.environ:
+        return
+    try:
         import uvloop
 
         asyncio.set_event_loop_policy(uvloop.EventLoopPolicy())
+    except ModuleNotFoundError:
+        warnings.warn(
+            'Install `uvloop` via `pip install "jina[uvloop]"` for better performance.'
+        )
 
 
 def get_or_reuse_loop():
@@ -835,8 +839,7 @@ def get_or_reuse_loop():
         if loop.is_closed():
             raise RuntimeError
     except RuntimeError:
-        if 'JINA_DISABLE_UVLOOP' not in os.environ:
-            _use_uvloop()
+        _use_uvloop()
         # no running event loop
         # create a new loop
         loop = asyncio.new_event_loop()
@@ -857,6 +860,26 @@ def typename(obj):
         return f'{obj.__module__}.{obj.__name__}'
     except AttributeError:
         return str(obj)
+
+
+class CatchAllCleanupContextManager:
+    """
+    This context manager guarantees, that the :method:``__exit__`` of the
+    sub context is called, even when there is an Exception in the
+    :method:``__enter__``.
+
+    :param sub_context: The context, that should be taken care of.
+    """
+
+    def __init__(self, sub_context):
+        self.sub_context = sub_context
+
+    def __enter__(self):
+        pass
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        if exc_type is not None:
+            self.sub_context.__exit__(exc_type, exc_val, exc_tb)
 
 
 class cached_property:
@@ -884,6 +907,48 @@ class cached_property:
             if hasattr(cached_value, 'close'):
                 cached_value.close()
             del obj.__dict__[f'CACHED_{self.func.__name__}']
+
+
+class _cache_invalidate:
+    """Class for cache invalidation, remove strategy.
+
+    :param func: func to wrap as a decorator.
+    :param attribute: String as the function name to invalidate cached
+        data. E.g. in :class:`cached_property` we cache data inside the class obj
+        with the `key`: `CACHED_{func.__name__}`, the func name in `cached_property`
+        is the name to invalidate.
+    """
+
+    def __init__(self, func, attribute: str):
+        self.func = func
+        self.attribute = attribute
+
+    def __call__(self, *args, **kwargs):
+        obj = args[0]
+        cached_key = f'CACHED_{self.attribute}'
+        if cached_key in obj.__dict__:
+            del obj.__dict__[cached_key]  # invalidate
+        self.func(*args, **kwargs)
+
+    def __get__(self, obj, cls):
+        from functools import partial
+
+        return partial(self.__call__, obj)
+
+
+def cache_invalidate(attribute: str):
+    """The cache invalidator decorator to wrap the method call.
+
+    Check the implementation in :class:`_cache_invalidate`.
+
+    :param attribute: The func name as was stored in the obj to invalidate.
+    :return: wrapped method.
+    """
+
+    def _wrap(func):
+        return _cache_invalidate(func, attribute)
+
+    return _wrap
 
 
 def get_now_timestamp():

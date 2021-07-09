@@ -17,7 +17,7 @@ from ...enums import (
     PeaRoleType,
     PollingType,
 )
-from ...helper import random_identity
+from ...helper import random_identity, CatchAllCleanupContextManager
 from ...jaml.helper import complete_path
 
 
@@ -82,26 +82,11 @@ class ExitFIFO(ExitStack):
         return received_exc and suppressed_exc
 
 
-class BasePod(ExitFIFO):
+class BasePod:
     """A BasePod is an immutable set of peas. They share the same input and output socket.
     Internally, the peas can run with the process/thread backend.
     They can be also run in their own containers on remote machines.
     """
-
-    def __init__(
-        self, args: Union['Namespace', Dict], needs: Optional[Set[str]] = None
-    ):
-        super().__init__()
-        args.upload_files = BasePod._set_upload_files(args)
-        self.args = args
-        self.needs = (
-            needs if needs else set()
-        )  #: used in the :class:`jina.flow.Flow` to build the graph
-
-        self.is_head_router = False
-        self.is_tail_router = False
-        self.deducted_head = None
-        self.deducted_tail = None
 
     def start(self) -> 'BasePod':
         """Start to run all :class:`BasePea` in this BasePod.
@@ -111,13 +96,6 @@ class BasePod(ExitFIFO):
             are properly closed.
         """
         raise NotImplementedError
-
-    def close(self):
-        """Stop all :class:`BasePea` in this BasePod.
-
-        .. # noqa: DAR201
-        """
-        self.__exit__(None, None, None)
 
     @staticmethod
     def _set_upload_files(args):
@@ -190,11 +168,8 @@ class BasePod(ExitFIFO):
         return self.head_args.zmq_identity
 
     def __enter__(self) -> 'BasePod':
-        return self.start()
-
-    def __exit__(self, exc_type, exc_val, exc_tb) -> None:
-        super().__exit__(exc_type, exc_val, exc_tb)
-        self.join()
+        with CatchAllCleanupContextManager(self):
+            return self.start()
 
     @staticmethod
     def _copy_to_head_args(
@@ -305,7 +280,7 @@ class BasePod(ExitFIFO):
         ...
 
 
-class Pod(BasePod):
+class Pod(BasePod, ExitFIFO):
     """A BasePod is an immutable set of peas, which run in parallel. They share the same input and output socket.
     Internally, the peas can run with the process/thread backend. They can be also run in their own containers
     :param args: arguments parsed from the CLI
@@ -313,9 +288,21 @@ class Pod(BasePod):
     """
 
     def __init__(
-        self, args: Union['Namespace', Dict], needs: Optional[Set[str]] = None
+        self,
+        args: Union['Namespace', Dict],
+        needs: Optional[Set[str]] = None,
     ):
-        super().__init__(args, needs)
+        super().__init__()
+        args.upload_files = BasePod._set_upload_files(args)
+        self.args = args
+        self.needs = (
+            needs or set()
+        )  #: used in the :class:`jina.flow.Flow` to build the graph
+
+        self.is_head_router = False
+        self.is_tail_router = False
+        self.deducted_head = None
+        self.deducted_tail = None
         self.peas = []  # type: List['BasePea']
         if isinstance(args, Dict):
             # This is used when a Pod is created in a remote context, where peas & their connections are already given.
@@ -323,6 +310,10 @@ class Pod(BasePod):
         else:
             self.peas_args = self._parse_args(args)
         self._activated = False
+
+    def __exit__(self, exc_type, exc_val, exc_tb) -> None:
+        super().__exit__(exc_type, exc_val, exc_tb)
+        self.join()
 
     @property
     def is_singleton(self) -> bool:
@@ -489,18 +480,12 @@ class Pod(BasePod):
             for _args in self._fifo_args:
                 _args.noblock_on_start = True
                 self._enter_pea(BasePea(_args))
-            # now rely on higher level to call `wait_start_success`
-            return self
         else:
-            try:
-                for _args in self._fifo_args:
-                    self._enter_pea(BasePea(_args))
+            for _args in self._fifo_args:
+                self._enter_pea(BasePea(_args))
 
-                self._activate()
-            except:
-                self.close()
-                raise
-            return self
+            self._activate()
+        return self
 
     def wait_start_success(self) -> None:
         """Block until all peas starts successfully.
