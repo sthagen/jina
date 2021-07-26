@@ -962,7 +962,7 @@ The following image shows how `DocumentArrayA` finds `limit=5` matches from the 
 
 More generally, given two `DocumentArray` objects `da_1` and `da_2` the function `da_1.match(da_2, metric=some_metric, is_distance=True, limit=N)` finds for each document in `da_1` then `N` documents from `da_2` with the lowest metric values according to `some_metric`. 
 
-- `metric` can be `'cosine'`, `'euclidean'`,  `'euclidean_squared'` 
+- `metric` can be `'cosine'`, `'euclidean'`,  `'sqeuclidean'` 
 -  `is_distance=True` interprets the input metric as a distance (lower metric values imply closer elements), otherwise it is considered a similairty  (higher metric values imply closer elements).
 
 The following example find the 3 closest documents, according to the euclidean distance, for each element in `da_1` from the elements in `da_2`.
@@ -1052,9 +1052,23 @@ dict(d.tags)={'city': 'Barcelona', 'phone': 'None'}
 dict(d.tags)={'phone': 'None', 'city': 'Brussels'}
 ```
 
+### Random sample a subset of Documents from a `DocumentArray` using `sample`
 
+`DocumentArray` provides function `.sample` that sample `k` elements without replacement.
+It accepts 2 parameters, `k` and `seed`. `k` is used to define the number of elements to sample, and `seed`
+helps you generate pseudo random results. It should be noted that `k` should always less or equal than the length of the document array.
 
+To make use of the function:
 
+```python
+from jina import Document, DocumentArray
+
+da = DocumentArray()  # initialize a random document array
+for idx in range(100):
+    da.append(Document(id=idx))  # append 100 documents into `da`
+sampled_da = da.sample(k=10)  # sample 10 documents
+sampled_da_with_seed = da.sample(k=10, seed=1)  # sample 10 documents with seed.
+```
 
 
 
@@ -1175,6 +1189,8 @@ This table summarizes the interfaces of `DocumentArrayMemmap` and `DocumentArray
 | `__bool__` |✅|✅|
 | `__eq__` |✅|✅|
 | `save`, `load` |❌ unnecessary |✅|
+| `sample` |✅ |✅|
+| `match` |✅ |❌|
 
 ### Convert between `DocumentArray` and `DocumentArrayMemmap`
 
