@@ -1,10 +1,12 @@
 from math import inf
 from typing import Optional, Union, Callable, Tuple
+from itertools import cycle
 
 import numpy as np
 
 from jina import Document
 from ...math.helper import top_k, minmax_normalize
+from ...math.dimensionality_reduction import PCA
 
 if False:
     from .document import DocumentArray
@@ -79,6 +81,68 @@ class DocumentArrayNeuralOpsMixin:
         for _q, _ids, _dists in zip(self, idx, dist):
             _q.matches.clear()
             for _id, _dist in zip(_ids, _dists):
-                d = Document(darray[int(_id)], copy=True)
-                d.scores[m_name] = _dist
-                _q.matches.append(d)
+                # Note, when match self with other, or both of them share the same Document
+                # we might have recursive matches .
+                # checkout https://github.com/jina-ai/jina/issues/3034
+                d = darray[int(_id)]
+                if d.id in self:
+                    d = Document(d, copy=True)
+                    d.pop('matches')
+                _q.matches.append(d, scores={m_name: _dist}, copy=False)
+
+    def visualize(
+        self,
+        tag_name: Union[str, None] = None,
+        file_path: Union[None, str] = None,
+        alpha: float = 0.2,
+    ):
+        """Visualize embeddings in a 2D projection with the PCA algorithm.
+
+        If `tag_name` is provided the plot uses a distinct color for each unique tag value in the
+        documents of the DocumentArray.
+
+        :param tag_name: Optional str that specifies tag used to color the plot
+        :param file_path: Optional path to store the visualization.
+        :param alpha: Float in [0,1] defining transparency of the dots in the plot.
+                      Value 0 is invisible, value 1 is opaque.
+        """
+
+        import matplotlib.pyplot as plt
+
+        color_space = cycle('vbgrcmk')
+
+        pca = PCA(n_components=2)
+        x_mat = np.stack(self.get_attributes('embedding'))
+        assert isinstance(
+            x_mat, np.ndarray
+        ), f'Type {type(x_mat)} not currently supported, use np.ndarray embeddings'
+
+        if tag_name:
+            tags = [x[tag_name] for x in self.get_attributes('tags')]
+            tag_to_num = {tag: num for num, tag in enumerate(set(tags))}
+            colors = np.array([tag_to_num[ni] for ni in tags])
+        else:
+            colors = None
+
+        x_mat_2d = pca.fit_transform(x_mat)
+        plt.figure(figsize=(8, 8))
+        plt.title(f'{len(x_mat)} documents with PCA')
+
+        if colors is not None:
+            # make one plot per color with the correct tag
+            for tag in tag_to_num:
+                num = tag_to_num[tag]
+                x_mat_subset = x_mat_2d[colors == num]
+                plt.scatter(
+                    x_mat_subset[:, 0],
+                    x_mat_subset[:, 1],
+                    alpha=alpha,
+                    label=f'{tag_name}={tag}',
+                )
+        else:
+            plt.scatter(x_mat_2d[:, 0], x_mat_2d[:, 1], alpha=alpha)
+
+        plt.legend()
+
+        if file_path:
+            plt.savefig(file_path)
