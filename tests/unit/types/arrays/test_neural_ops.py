@@ -46,11 +46,11 @@ def test_minmax_normalization_1d():
     np.testing.assert_almost_equal(minmax_normalize(a, (1, 0)), [1, 0.5, 0])
 
 
-def test_minmax_normalization_2d():
-    a = np.array([[1, 2, 3], [3, 2, 1]])
-    np.testing.assert_almost_equal(minmax_normalize(a), [[0, 0.5, 1], [1, 0.5, 0]])
+def test_minmax_normalization_2d_row_normalize():
+    a = np.array([[1, 2, 3], [6, 3, 2]])
+    np.testing.assert_almost_equal(minmax_normalize(a), [[0, 0.5, 1], [1, 0.25, 0]])
     np.testing.assert_almost_equal(
-        minmax_normalize(a, (1, 0)), [[1, 0.5, 0], [0, 0.5, 1]]
+        minmax_normalize(a, (1, 0)), [[1, 0.5, 0], [0, 0.75, 1]]
     )
 
 
@@ -276,7 +276,7 @@ def test_pca_projection(embeddings, whiten):
 def test_pca_plot_generated(embeddings, tmpdir):
     doc_array = DocumentArray([Document(embedding=x) for x in embeddings])
     file_path = os.path.join(tmpdir, 'pca_plot.png')
-    doc_array.visualize(file_path=file_path)
+    doc_array.visualize(output=file_path)
     assert os.path.exists(file_path)
 
 

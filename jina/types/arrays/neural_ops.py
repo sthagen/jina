@@ -1,12 +1,11 @@
 from math import inf
 from typing import Optional, Union, Callable, Tuple
-from itertools import cycle
 
 import numpy as np
 
-from jina import Document
+from ... import Document
+from ...importer import ImportExtensions
 from ...math.helper import top_k, minmax_normalize
-from ...math.dimensionality_reduction import PCA
 
 if False:
     from .document import DocumentArray
@@ -57,7 +56,6 @@ class DocumentArrayNeuralOpsMixin:
 
         X = np.stack(self.get_attributes('embedding'))
         Y = np.stack(darray.get_attributes('embedding'))
-        limit = min(limit, len(darray))
 
         if isinstance(metric, str):
             if use_scipy:
@@ -72,7 +70,7 @@ class DocumentArrayNeuralOpsMixin:
                 f'metric must be either string or a 2-arity function, received: {metric!r}'
             )
 
-        dist, idx = top_k(dists, limit, descending=False)
+        dist, idx = top_k(dists, min(limit, len(darray)), descending=False)
         if normalization is not None:
             if isinstance(normalization, (tuple, list)):
                 dist = minmax_normalize(dist, normalization)
@@ -92,57 +90,70 @@ class DocumentArrayNeuralOpsMixin:
 
     def visualize(
         self,
-        tag_name: Union[str, None] = None,
-        file_path: Union[None, str] = None,
-        alpha: float = 0.2,
+        output: Optional[str] = None,
+        title: Optional[str] = None,
+        colored_tag: Optional[str] = None,
+        colormap: str = 'rainbow',
+        method: str = 'pca',
+        show_axis: bool = False,
     ):
-        """Visualize embeddings in a 2D projection with the PCA algorithm.
+        """Visualize embeddings in a 2D projection with the PCA algorithm. This function requires ``matplotlib`` installed.
 
         If `tag_name` is provided the plot uses a distinct color for each unique tag value in the
         documents of the DocumentArray.
 
-        :param tag_name: Optional str that specifies tag used to color the plot
-        :param file_path: Optional path to store the visualization.
-        :param alpha: Float in [0,1] defining transparency of the dots in the plot.
-                      Value 0 is invisible, value 1 is opaque.
+        :param output: Optional path to store the visualization. If not given, show in UI
+        :param title: Optional title of the plot. When not given, the default title is used.
+        :param colored_tag: Optional str that specifies tag used to color the plot
+        :param colormap: the colormap string supported by matplotlib.
+        :param method: the visualization method, available `pca`, `tsne`. `pca` is fast but may not well represent
+                nonlinear relationship of high-dimensional data. `tsne` requires scikit-learn to be installed and is
+                much slower.
+        :param show_axis: If set, axis and bounding box of the plot will be printed.
+
         """
 
-        import matplotlib.pyplot as plt
-
-        color_space = cycle('vbgrcmk')
-
-        pca = PCA(n_components=2)
         x_mat = np.stack(self.get_attributes('embedding'))
         assert isinstance(
             x_mat, np.ndarray
         ), f'Type {type(x_mat)} not currently supported, use np.ndarray embeddings'
 
-        if tag_name:
-            tags = [x[tag_name] for x in self.get_attributes('tags')]
-            tag_to_num = {tag: num for num, tag in enumerate(set(tags))}
-            colors = np.array([tag_to_num[ni] for ni in tags])
-        else:
-            colors = None
+        if method == 'tsne':
+            from sklearn.manifold import TSNE
 
-        x_mat_2d = pca.fit_transform(x_mat)
+            x_mat_2d = TSNE(n_components=2).fit_transform(x_mat)
+        else:
+            from ...math.dimensionality_reduction import PCA
+
+            x_mat_2d = PCA(n_components=2).fit_transform(x_mat)
+
+        plt_kwargs = {
+            'x': x_mat_2d[:, 0],
+            'y': x_mat_2d[:, 1],
+            'alpha': 0.2,
+            'marker': '.',
+        }
+
+        with ImportExtensions(required=True):
+            import matplotlib.pyplot as plt
+
         plt.figure(figsize=(8, 8))
-        plt.title(f'{len(x_mat)} documents with PCA')
+        plt.title(title or f'{len(x_mat)} Documents with PCA')
 
-        if colors is not None:
-            # make one plot per color with the correct tag
-            for tag in tag_to_num:
-                num = tag_to_num[tag]
-                x_mat_subset = x_mat_2d[colors == num]
-                plt.scatter(
-                    x_mat_subset[:, 0],
-                    x_mat_subset[:, 1],
-                    alpha=alpha,
-                    label=f'{tag_name}={tag}',
-                )
+        if colored_tag:
+            tags = [x[colored_tag] for x in self.get_attributes('tags')]
+            tag_to_num = {tag: num for num, tag in enumerate(set(tags))}
+            plt_kwargs['c'] = np.array([tag_to_num[ni] for ni in tags])
+            plt_kwargs['cmap'] = plt.get_cmap(colormap)
+
+        plt.scatter(**plt_kwargs)
+
+        if not show_axis:
+            plt.gca().set_axis_off()
+            plt.gca().xaxis.set_major_locator(plt.NullLocator())
+            plt.gca().yaxis.set_major_locator(plt.NullLocator())
+
+        if output:
+            plt.savefig(output, bbox_inches='tight', pad_inches=0.1)
         else:
-            plt.scatter(x_mat_2d[:, 0], x_mat_2d[:, 1], alpha=alpha)
-
-        plt.legend()
-
-        if file_path:
-            plt.savefig(file_path)
+            plt.show()
