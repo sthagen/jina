@@ -5,7 +5,6 @@ import mimetypes
 import os
 import urllib.parse
 import urllib.request
-import warnings
 from hashlib import blake2b
 from typing import (
     Iterable,
@@ -291,20 +290,7 @@ class Document(ProtoTypeMixin, VersionedMixin):
                                 {k: document[k] for k in _remainder}
                             )
             elif isinstance(document, bytes):
-                # directly parsing from binary string gives large false-positive
-                # fortunately protobuf throws a warning when the parsing seems go wrong
-                # the context manager below converts this warning into exception and throw it
-                # properly
-                with warnings.catch_warnings():
-                    warnings.filterwarnings(
-                        'error', 'Unexpected end-group tag', category=RuntimeWarning
-                    )
-                    try:
-                        self._pb_body.ParseFromString(document)
-                    except RuntimeWarning as ex:
-                        raise BadDocType(
-                            f'fail to construct a document from {document}'
-                        ) from ex
+                self._pb_body.ParseFromString(document)
             elif isinstance(document, Document):
                 if copy:
                     self._pb_body.CopyFrom(document.proto)
@@ -328,6 +314,7 @@ class Document(ProtoTypeMixin, VersionedMixin):
             raise ValueError(
                 f'Document content fields are mutually exclusive, please provide only one of {_all_doc_content_keys}'
             )
+        self._mermaid_id = random_identity()
         self.set_attributes(**kwargs)
 
     def pop(self, *fields) -> None:
@@ -424,7 +411,7 @@ class Document(ProtoTypeMixin, VersionedMixin):
             if (
                 field == 'tags'
             ):  # For the tags, stay consistent with the python update method.
-                self._pb_body.tags.update(source.tags)
+                self.tags.update(source.tags)
             else:
                 self._pb_body.ClearField(field)
                 try:
@@ -1192,10 +1179,10 @@ class Document(ProtoTypeMixin, VersionedMixin):
 
         mermaid_str = (
             """
-                                %%{init: {'theme': 'base', 'themeVariables': { 'primaryColor': '#FFC666'}}}%%
-                                classDiagram
-
-                                        """
+                                    %%{init: {'theme': 'base', 'themeVariables': { 'primaryColor': '#FFC666'}}}%%
+                                    classDiagram
+    
+                                            """
             + self.__mermaid_str__()
         )
 
@@ -1338,14 +1325,6 @@ class Document(ProtoTypeMixin, VersionedMixin):
         else:
             raise AttributeError
         return value
-
-    @cached_property
-    def _mermaid_id(self) -> str:
-        """A unique ID for mermaid visualize id
-
-        :return: unique ID
-        """
-        return random_identity()
 
 
 def _is_uri(value: str) -> bool:
