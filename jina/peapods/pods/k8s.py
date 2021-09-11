@@ -21,6 +21,9 @@ class K8sPod(BasePod):
         self.deployment_args = self._parse_args(args)
         self.version = self._get_base_executor_version()
 
+        self.fixed_head_port_in = 8081
+        self.fixed_tail_port_out = 8082
+
     def _parse_args(
         self, args: Namespace
     ) -> Dict[str, Optional[Union[List[Namespace], Namespace]]]:
@@ -33,20 +36,22 @@ class K8sPod(BasePod):
             'deployments': [],
         }
         parallel = getattr(args, 'parallel', 1)
-        if parallel > 1:
+        replicas = getattr(args, 'replicas', 1)
+        uses_before = getattr(args, 'uses_before', None)
+        if parallel > 1 or (len(self.needs) > 1 and replicas > 1) or uses_before:
             # reasons to separate head and tail from peas is that they
             # can be deducted based on the previous and next pods
             parsed_args['head_deployment'] = copy.copy(args)
             parsed_args['head_deployment'].uses = (
                 args.uses_before or __default_executor__
             )
+        if parallel > 1 or getattr(args, 'uses_after', None):
             parsed_args['tail_deployment'] = copy.copy(args)
             parsed_args['tail_deployment'].uses = (
                 args.uses_after or __default_executor__
             )
-            parsed_args['deployments'] = [args] * parallel
-        else:
-            parsed_args['deployments'] = [args]
+
+        parsed_args['deployments'] = [args] * parallel
         return parsed_args
 
     def __exit__(self, exc_type, exc_val, exc_tb) -> None:
@@ -82,7 +87,9 @@ class K8sPod(BasePod):
     def _deploy_runtime(self, deployment_args, replicas, deployment_id):
         image_name = kubernetes_deployment.get_image_name(deployment_args.uses)
         name_suffix = self.name + (
-            ('-' + str(deployment_id)) if self.args.parallel > 1 else ''
+            ''
+            if self.args.parallel == 1 and type(deployment_id) == int
+            else ('-' + str(deployment_id))
         )
         dns_name = kubernetes_deployment.to_dns_name(name_suffix)
         init_container_args = kubernetes_deployment.get_init_container_args(self)
@@ -98,14 +105,8 @@ class K8sPod(BasePod):
             uses = 'BaseExecutor'
         else:
             uses = 'config.yml'
-        container_args = (
-            f'["pea", '
-            f'"--uses", "{uses}", '
-            f'"--grpc-data-requests", '
-            f'"--runtime-cls", "GRPCDataRuntime", '
-            f'"--uses-metas", "{uses_metas}", '
-            + uses_with_string
-            + f'{kubernetes_deployment.get_cli_params(deployment_args)}]'
+        container_args = self._construct_runtime_container_args(
+            deployment_args, uses, uses_metas, uses_with_string
         )
 
         kubernetes_deployment.deploy_service(
@@ -120,6 +121,21 @@ class K8sPod(BasePod):
             init_container=init_container_args,
             custom_resource_dir=getattr(self.args, 'k8s_custom_resource_dir', None),
         )
+
+    @staticmethod
+    def _construct_runtime_container_args(
+        deployment_args, uses, uses_metas, uses_with_string
+    ):
+        container_args = (
+            f'["pea", '
+            f'"--uses", "{uses}", '
+            f'"--grpc-data-requests", '
+            f'"--runtime-cls", "GRPCDataRuntime", '
+            f'"--uses-metas", "{uses_metas}", '
+            + uses_with_string
+            + f'{kubernetes_deployment.get_cli_params(deployment_args)}]'
+        )
+        return container_args
 
     def start(self) -> 'K8sPod':
         """Deploy the kubernetes pods via k8s Deployment and k8s Service.
@@ -155,6 +171,13 @@ class K8sPod(BasePod):
 
     def join(self):
         """Not implemented. It should wait to make sure deployments are properly killed."""
+        pass
+
+    def update_pea_args(self):
+        """
+        Regenerate deployment args
+        """
+        self.deployment_args = self._parse_args(self.args)
         pass
 
     @property
@@ -246,7 +269,7 @@ class K8sPod(BasePod):
         return {
             'name': name,
             'head_host': f'{dns_name}.{self.args.k8s_namespace}.svc.cluster.local',
-            'head_port_in': 8081,
-            'tail_port_out': 8082,
+            'head_port_in': self.fixed_head_port_in,
+            'tail_port_out': self.fixed_tail_port_out,
             'head_zmq_identity': self.head_zmq_identity,
         }
