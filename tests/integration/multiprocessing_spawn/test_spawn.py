@@ -1,15 +1,9 @@
-"""Tests that flow can launch when using the spawn multiprocessing method
-
-Currently when using class name this still breaks (see xfail)
-"""
+"""Tests that flow can launch when using the spawn multiprocessing method"""
 
 import os
 import subprocess
 import sys
 from pathlib import Path
-
-
-import pytest
 
 
 def test_launch_spawn_empty():
@@ -31,10 +25,18 @@ def test_launch_spawn_cls():
     )
 
 
-@pytest.mark.xfail(reason="re-importing not possible when given only exec name")
 def test_launch_spawn_name():
     subprocess.run(
         [sys.executable, 'main_name.py'],
+        check=True,
+        env={'JINA_MP_START_METHOD': 'spawn', 'PATH': os.environ['PATH']},
+        cwd=Path(__file__).parent / 'modules',
+    )
+
+
+def test_launch_spawn_jaml():
+    subprocess.run(
+        [sys.executable, 'main_jaml.py'],
         check=True,
         env={'JINA_MP_START_METHOD': 'spawn', 'PATH': os.environ['PATH']},
         cwd=Path(__file__).parent / 'modules',
