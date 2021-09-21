@@ -119,11 +119,12 @@ advanced/experimental/index
 tutorials/fuzzy-grep
 tutorials/chatbot
 tutorials/master-executor
+tutorials/refactor-hello-world
 tutorials/gpu-executor
 ```
 
 ```{toctree}
-:caption: Developer Reference
+:caption: API Reference
 :hidden:
 :maxdepth: 1
 
