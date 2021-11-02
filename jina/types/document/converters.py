@@ -18,7 +18,7 @@ if TYPE_CHECKING:
 
 
 def _deprecate(new_fn):
-    def f(*args, **kwargs):
+    def _f(*args, **kwargs):
         import inspect
 
         old_fn_name = inspect.stack()[1][4][0].strip().split("=")[0].strip()
@@ -29,7 +29,7 @@ def _deprecate(new_fn):
         )
         return new_fn(*args, **kwargs)
 
-    return f
+    return _f
 
 
 class ContentConversionMixin:
@@ -544,14 +544,17 @@ class ContentConversionMixin:
             strides=(row_step * stride_h, col_step * stride_w, row_step, col_step, 1),
             writeable=False,
         )
+        cur_loc_h, cur_loc_w = 0, 0
+        if self.location:
+            cur_loc_h, cur_loc_w = self.location[:2]
 
+        bbox_locations = [
+            (h * stride_h + cur_loc_h, w * stride_w + cur_loc_w, window_h, window_w)
+            for h in range(expanded_img.shape[0])
+            for w in range(expanded_img.shape[1])
+        ]
         expanded_img = expanded_img.reshape((-1, window_h, window_w, c))
         if as_chunks:
-            bbox_locations = [
-                (h * stride_h, w * stride_w)
-                for h in range(expanded_img.shape[0])
-                for w in range(expanded_img.shape[1])
-            ]
             from . import Document
 
             for location, _blob in zip(bbox_locations, expanded_img):
