@@ -1,4 +1,5 @@
 import json
+import uuid
 import mimetypes
 from typing import (
     Dict,
@@ -23,7 +24,7 @@ from ..score import NamedScore
 from ..score.map import NamedScoreMapping
 from ..struct import StructView
 from ...excepts import BadDocType
-from ...helper import random_identity, typename
+from ...helper import typename
 from ...proto import jina_pb2
 
 if TYPE_CHECKING:
@@ -265,7 +266,7 @@ class Document(AllMixins, ProtoTypeMixin):
             ) from ex
 
         if self._pb_body.id is None or not self._pb_body.id:
-            self.id = random_identity(use_uuid1=True)
+            self.id = uuid.uuid1().hex
 
         if kwargs:
             # check if there are mutually exclusive content fields
@@ -393,7 +394,7 @@ class Document(AllMixins, ProtoTypeMixin):
 
     @blob.setter
     def blob(self, value: 'ArrayType'):
-        """Set the `blob` to :param:`value`.
+        """Set the `blob` to `value`.
 
         :param value: the array value to set the blob
         """
@@ -487,7 +488,7 @@ class Document(AllMixins, ProtoTypeMixin):
 
     @buffer.setter
     def buffer(self, value: bytes):
-        """Set the ``buffer`` to :param:`value`.
+        """Set the ``buffer`` to `value`.
 
         :param value: the bytes value to set the buffer
         """
@@ -509,7 +510,7 @@ class Document(AllMixins, ProtoTypeMixin):
 
     @text.setter
     def text(self, value: str):
-        """Set the `text` to :param:`value`
+        """Set the `text` to `value`
 
         :param value: the text value to set as content
         """

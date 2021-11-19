@@ -1,6 +1,6 @@
 # Document
 
-`Document` is Jina's basic data type. Whether you're working with text, image, video, audio, or 3D meshes, they are
+{class}`~jina.types.document.Document` is the basic data type in Jina. Whether you're working with text, image, video, audio, or 3D meshes, they are
 all `Document`s in Jina.
 
 ## Minimum working example
@@ -26,7 +26,7 @@ d3 = Document(blob=numpy.array([1, 2, 3]))
 
 ### Content 
 
-`text`, `blob`, and `buffer` are the three content attributes of a Document. They correspond to string-like data (e.g. for natural language), `ndarray`-like data (e.g. for image/audio/video data), and binary data for general purpose, respectively. Each Document can contain only one type of content.
+{attr}`~jina.Document.text`, {attr}`~jina.Document.blob`, and {attr}`~jina.Document.buffer` are the three content attributes of a Document. They correspond to string-like data (e.g. for natural language), `ndarray`-like data (e.g. for image/audio/video data), and binary data for general purpose, respectively. Each Document can contain only one type of content.
 
 | Attribute | Accept type | Use case |
 | --- | --- | --- |
@@ -71,7 +71,7 @@ There is also a `doc.content` sugar getter/setter of the above non-empty field. 
 
 #### Loading content from URI
 
-Often, you need to load data from a URI instead of assigning them directly in your code, `.uri` is the attribute you must learn. 
+Often, you need to load data from a URI instead of assigning them directly in your code, {attr}`~jina.Document.uri` is the attribute you must learn. 
 
 After setting `.uri`, you can load data into `.text`/`.buffer`/`.blob` as follows.
 
@@ -83,7 +83,7 @@ The value of `.uri` can point to either local URI, remote URI or [data URI](http
 ```python
 from jina import Document
 
-d1 = Document(uri='apple.png').convert_uri_to_image_blob()
+d1 = Document(uri='apple.png').load_uri_to_image_blob()
 print(d1.content_type, d1.content)
 ```
 
@@ -101,7 +101,7 @@ blob [[[255 255 255]
 ```python
 from jina import Document
 
-d1 = Document(uri='https://www.gutenberg.org/files/1342/1342-0.txt').convert_uri_to_text()
+d1 = Document(uri='https://www.gutenberg.org/files/1342/1342-0.txt').load_uri_to_text()
 
 print(d1.content_type, d1.content)
 ```
@@ -123,7 +123,7 @@ from jina import Document
 d1 = Document(uri='''data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAUA
 AAAFCAYAAACNbyblAAAAHElEQVQI12P4//8/w38GIAXDIBKE0DHxgljNBAAO
 9TXL0Y4OHwAAAABJRU5ErkJggg==
-''').convert_uri_to_image_blob()
+''').load_uri_to_image_blob()
 
 print(d1.content_type, d1.content)
 ```
@@ -138,13 +138,13 @@ blob [[[255 255 255]
 
 ````
 
-There are more `.convert_uri_to_*` functions that allow you to read {ref}`text<text-type>`, {ref}`image<image-type>`, {ref}`video<video-type>`, {ref}`3D mesh<mesh-type>`, {ref}`audio<audio-type>` and {ref}`tabular<table-type>` data into Jina.
+There are more `.load_uri_to_*` functions that allow you to read {ref}`text<text-type>`, {ref}`image<image-type>`, {ref}`video<video-type>`, {ref}`3D mesh<mesh-type>`, {ref}`audio<audio-type>` and {ref}`tabular<table-type>` data into Jina.
 
 ```{admonition} Write to data URI
 :class: tip
 Inline data URI is helpful when you need a quick visualization in HTML, as it embeds all resources directly into that HTML. 
 
-You can convert a URI to a data URI using `doc.convert_uri_to_datauri()`. This will fetch the resource and make it inline.
+You can convert a URI to a data URI using `doc.load_uri_to_datauri()`. This will fetch the resource and make it inline.
 ```
 
 
@@ -152,7 +152,7 @@ You can convert a URI to a data URI using `doc.convert_uri_to_datauri()`. This w
 
 Embedding is a multi-dimensional representation of a `Document` (often a `[1, D]` vector). It serves as a very important piece in the neural search. 
 
-Document has an attribute `.embedding` to contain the embedding information.
+Document has an attribute {attr}`~jina.Document.embedding` to contain the embedding information.
 
 Like `.blob`, you can assign it with Numpy `ndarray`, SciPy sparse matrix (`spmatrix`), TensorFlow dense and sparse tensor, PyTorch dense and sparse tensor, or PaddlePaddle dense tensor.
 
@@ -276,7 +276,7 @@ root_document = Document(
 
 ### Tags
 
-`Document` contains the `tags` field that can hold a map-like structure that can map arbitrary values. 
+`Document` contains the {attr}`~jina.Document.tags` attribute that can hold a map-like structure that can map arbitrary values. 
 In practice, you can store meta information in `tags`.
 
 ```python
@@ -379,7 +379,7 @@ with Flow().add(uses=MyExecutor) as f:
 
 ### Visualization
 
-To better see the Document's recursive structure, you can use `.plot()` function. If you are using JupyterLab/Notebook,
+To better see the Document's recursive structure, you can use {meth}`~jina.types.document.mixins.plot.PlotMixin.plot` function. If you are using JupyterLab/Notebook,
 all `Document` objects will be auto-rendered:
 
 
@@ -473,6 +473,8 @@ Unset an attribute:
 ```python
 d.text = None
 ```
+
+or 
 
 ```python
 d.pop('text')

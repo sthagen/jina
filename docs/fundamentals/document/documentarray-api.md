@@ -1,7 +1,7 @@
 (documentarray)=
 # DocumentArray
 
-A `DocumentArray` is a list of `Document` objects. You can construct, delete, insert, sort and traverse
+A {class}`~jina.types.arrays.document.DocumentArray` is a list of `Document` objects. You can construct, delete, insert, sort and traverse
 a `DocumentArray` like a Python `list`. It implements all Python List interface. 
 
 ```{hint}
@@ -76,7 +76,7 @@ da[1:2]
 
 You can quickly access `.text`, `.blob`, `.buffer`, `.embedding` of all Documents in the DocumentArray without writing a for-loop.
 
-`DocumentArray` provides the plural counterparts, i.e. `.texts`, `.blobs`, `.buffers`, `.embeddings` that allows you to **get** and **set** these properties in one shot. It is much more efficient than looping.
+`DocumentArray` provides the plural counterparts, i.e. {attr}`~jina.types.arrays.mixins.content.ContentPropertyMixin.texts`, {attr}`~jina.types.arrays.mixins.content.ContentPropertyMixin.buffers`, {attr}`~jina.types.arrays.mixins.content.ContentPropertyMixin.blobs`, {attr}`~jina.types.arrays.mixins.content.ContentPropertyMixin.embeddings` that allows you to **get** and **set** these properties in one shot. It is much more efficient than looping.
 
 ```python
 from jina import DocumentArray
@@ -131,7 +131,7 @@ d.embedding.shape= (1, 256)
 
 ## Find nearest neighbours
 
-Once `embedding` is set, one can use `.match()` function to find the nearest neighbour Documents from another `DocumentArray` based on their `.embeddings`.  
+Once `embeddings` is set, one can use {func}`~jina.types.arrays.mixins.match.MatchMixin.match` function to find the nearest neighbour Documents from another `DocumentArray` based on their `.embeddings`.  
 
 The following image visualizes how `DocumentArrayA` finds `limit=5` matches from the Documents in `DocumentArrayB`. By
 default, the cosine similarity is used to evaluate the score between Documents.
@@ -275,9 +275,124 @@ da1.match(da2, device='cuda', batch_size=256)
 
 ````
 
+Let's do a simple benchmark on CPU vs. GPU `.match()`:
+
+```python
+from jina import DocumentArray
+
+Q = 10
+M = 1_000_000
+D = 768
+
+da1 = DocumentArray.empty(Q)
+da2 = DocumentArray.empty(M)
+```
+
+````{tab} on CPU via Numpy
+
+```python
+import numpy as np
+
+da1.embeddings = np.random.random([Q, D]).astype(np.float32)
+da2.embeddings = np.random.random([M, D]).astype(np.float32)
+```
+
+```python
+%timeit da1.match(da2, only_id=True)
+```
+
+```text
+6.18 s ± 7.18 ms per loop (mean ± std. dev. of 7 runs, 1 loop each)
+```
+
+````
+
+````{tab} on GPU via PyTorch
+
+```python
+import torch
+
+da1.embeddings = torch.tensor(np.random.random([Q, D]).astype(np.float32))
+da2.embeddings = torch.tensor(np.random.random([M, D]).astype(np.float32))
+```
+
+```python
+%timeit da1.match(da2, device='cuda', batch_size=1_000, only_id=True)
+```
+
+```text
+3.97 s ± 6.35 ms per loop (mean ± std. dev. of 7 runs, 1 loop each)
+```
+
+````
+
+Note that in the above GPU example we did a conversion. In practice, there is no need to do this conversion, `.embedding`/`.blob` as well as their bulk versions `.embeddings`/`.blobs` can store PyTorch/Tensorflow/Paddle/Scipy tensor **natively**. That is, in practice, you just need to assign the result directly into `.embeddings` in your Encoder via:
+
+```python
+da.embeddings = torch_model(da.blobs)  # <- no .numpy() is necessary
+```
+
+And then in just use `.match(da)`.
+
+### Evaluate matches
+
+You can easily evaluate the performance of matches via {func}`~jina.types.arrays.mixins.evaluation.EvaluationMixin.evaluate`, provide that you have the groundtruth of the matches.
+
+Jina provides some common metrics used in the information retrieval community that allows one to evaluate the nearest-neighbour matches. These metrics include: precision, recall, R-precision, hit rate, NDCG, etc. The full list of functions can be found in {class}`~jina.math.evaluation`.
+
+For example, let's create a `DocumentArray` with random embeddings and matching it to itself:
+
+```python
+import numpy as np
+from jina import DocumentArray
+
+da = DocumentArray.empty(10)
+da.embeddings = np.random.random([10, 3])
+da.match(da, exclude_self=True)
+```
+
+Now `da.matches` contains the matches. Let's use it as the groundtruth. Now let's create imperfect matches by mixing in ten "noise Documents" to every `d.matches`.
+
+```python
+da2 = copy.deepcopy(da)
+
+for d in da2:
+    d.matches.extend(DocumentArray.empty(10))
+    d.matches = d.matches.shuffle()
+
+print(da2.evaluate(da, metric='precision_at_k', k=5))
+```
+
+Now we should have the average Precision@10 close to 0.5.
+```text
+0.5399999999999999
+```
+
+Note that this value is an average number over all Documents of `da2`. If you want to look at the individual evaluation, you can check {attr}`~jina.Document.evaluations` attribute, e.g.
+
+```python
+for d in da2:
+    print(d.evaluations['precision_at_k'].value)
+```
+
+```text
+0.4000000059604645
+0.6000000238418579
+0.5
+0.5
+0.5
+0.4000000059604645
+0.5
+0.4000000059604645
+0.5
+0.30000001192092896
+```
+
+Note that `evaluate()` works only when two `DocumentArray` have the same length and their Documents are aligned by a hash function. The default hash function simply uses {attr}`~jina.Document.id`. You can specify your own hash function.
+
 ## Traverse nested structure
 
-`.traverse_flat()` function is an extremely powerful tool for iterating over nested and recursive Documents. You get a generator as the return value, which generates `Document`s on the provided traversal paths. You can use or modify `Document`s and the change will be applied in-place. 
+{meth}`~jina.types.arrays.mixins.traverse.TraverseMixin.traverse_flat` function is an extremely powerful tool for iterating over nested and recursive Documents. You get a generator as the return value, which generates `Document`s on the provided traversal paths. You can use or modify `Document`s and the change will be applied in-place. 
 
 
 ### Syntax of traversal path
@@ -410,8 +525,8 @@ DocumentArray([
 ])
 ```
 
-`DocumentArray.traverse_flat_per_path` is another method for `Document` traversal. It works
-like `DocumentArray.traverse_flat` but groups `Documents` into `DocumentArrays` based on traversal path. When
+{meth}`jina.types.arrays.mixins.traverse.TraverseMixin.traverse_flat_per_path` is another method for `Document` traversal. It works
+like `traverse_flat` but groups `Documents` into `DocumentArrays` based on traversal path. When
 calling `da.traverse_flat_per_path('cm,ccm')`, the resulting generator yields the following `DocumentArray`:
 
 ```text
@@ -427,8 +542,7 @@ DocumentArray([
 
 ### Flatten Document
 
-If you simply want to traverse **all** chunks and matches regardless their levels. You can simply use `.flatten`. It will return a `DocumentArray` with all chunks and matches flattened into the top-level, no more nested structure.
-
+If you simply want to traverse **all** chunks and matches regardless their levels. You can simply use {meth}`~jina.types.arrays.mixins.traverse.TraverseMixin.flatten`. It will return a `DocumentArray` with all chunks and matches flattened into the top-level, no more nested structure.
 
 ## Visualization
 
@@ -485,6 +599,25 @@ da.save('data.bin', file_format='binary')
 da1 = DocumentArray.load('data.bin', file_format='binary')
 ```
 
+## Batching
+
+One can batch a large `DocumentArray` into small ones via {func}`~jina.types.arrays.mixins.group.GroupMixin.batch`. This is useful when a `DocumentArray` is too big to process at once. It is particular useful on `DocumentArrayMemmap`, which ensures the data gets loaded on-demand and in a conservative manner.
+
+```python
+from jina import DocumentArray
+
+da = DocumentArray.empty(1000)
+
+for b_da in da.batch(batch_size=256):
+    print(len(b_da))
+```
+
+```text
+256
+256
+256
+232
+```
 
 
 ## Sampling
