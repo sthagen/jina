@@ -39,11 +39,8 @@ jobs:
           cd docs
           pip install -r requirements.txt
           pip install furo==2021.10.9
-          docker run --rm \
-            -v $(pwd)/proto:/out \
-            -v $(pwd)/../jina/proto:/protos \
-            pseudomuto/protoc-gen-doc --doc_opt=markdown,docs.md
-          make dirhtml
+          export NUM_RELEASES=10
+          bash makedoc.sh
           cd ./_build/dirhtml/
           cp -r ./ ../../../gen-html
           cd -  # back to ./docs
@@ -56,8 +53,8 @@ jobs:
           cd ../docs
           ls -la
           touch .nojekyll
-          cp 404/index.html 404.html
-          sed -i 's/href="\.\./href="/' 404.html # fix asset urls that needs to be updated in 404.html
+          # cp 404/index.html 404.html
+          # sed -i 's/href="\.\./href="/' 404.html # fix asset urls that needs to be updated in 404.html
           echo docs.jina.ai > CNAME
           cd ..
           git status
