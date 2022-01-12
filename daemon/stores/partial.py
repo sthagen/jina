@@ -4,16 +4,16 @@ from argparse import Namespace
 from typing import Dict, Optional, Type, Union
 
 from jina.helper import colored, random_port
-from jina.peapods.pods.factory import PodFactory
+from jina.peapods.pods import Pod
 from jina.peapods.peas.factory import PeaFactory
 from jina.peapods import BasePod, BasePea
 from jina.peapods.peas.helper import update_runtime_cls
 from jina import Flow, __docker_host__
 from jina.logging.logger import JinaLogger
 
-from .. import jinad_args, __partial_workspace__
-from ..models.ports import Ports, PortMappings
-from ..models.partial import PartialFlowItem, PartialStoreItem
+from daemon import jinad_args, __partial_workspace__
+from daemon.models.ports import Ports, PortMappings
+from daemon.models.partial import PartialFlowItem, PartialStoreItem
 
 
 class PartialStore(ABC):
@@ -93,7 +93,7 @@ class PartialPeaStore(PartialStore):
 class PartialPodStore(PartialPeaStore):
     """A Pod store spawned inside partial-daemon container"""
 
-    peapod_constructor = PodFactory.build_pod
+    peapod_constructor = Pod
 
     async def rolling_update(
         self, uses_with: Optional[Dict] = None

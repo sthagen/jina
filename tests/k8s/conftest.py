@@ -51,11 +51,8 @@ def image_name_tag_map():
     return {
         'reload-executor': '0.13.1',
         'test-executor': '0.13.1',
-        'executor-merger': '0.1.1',
-        'dummy-dumper': '0.1.1',
         'slow-process-executor': '0.14.1',
-        'slow-init-executor': '0.13.1',
-        'alpine': '3.14',
+        'executor-merger': '0.1.1',
         'jinaai/jina': 'test-pip',
     }
 
@@ -78,6 +75,19 @@ def set_test_pip_version():
     os.environ['JINA_K8S_USE_TEST_PIP'] = 'True'
     yield
     del os.environ['JINA_K8S_USE_TEST_PIP']
+
+
+@pytest.fixture(autouse=True)
+def load_cluster_config(k8s_cluster):
+    import kubernetes
+
+    try:
+        # try loading kube config from disk first
+        kubernetes.config.load_kube_config()
+    except kubernetes.config.config_exception.ConfigException:
+        # if the config could not be read from disk, try loading in cluster config
+        # this works if we are running inside k8s
+        kubernetes.config.load_incluster_config()
 
 
 @pytest.fixture
