@@ -6,21 +6,13 @@ import pytest
 from urllib import request
 
 from jina import Flow
-from jina.peapods.runtimes.gateway.http.models import _to_camel_case
-from docarray.proto import docarray_pb2
+from jina.serve.runtimes.gateway.http.models import _to_camel_case
 from jina import Document
 from jina import helper
 from jina import Executor, requests
 from tests import validate_callback
 
 cur_dir = os.path.dirname(os.path.abspath(__file__))
-
-_document_fields = sorted(
-    set(
-        _to_camel_case(k)
-        for k in list(docarray_pb2.DocumentProto().DESCRIPTOR.fields_by_name)
-    )
-)
 
 # check if this can be bypassed
 IGNORED_FIELDS = ['embedding', 'scores', 'graphInfo', 'evaluations']
@@ -71,14 +63,6 @@ def test_no_matches_rest(query_dict):
         )
         resp = request.urlopen(req).read().decode('utf8')
         doc = json.loads(resp)['data']['docs'][0]
-        present_keys = sorted(doc.keys())
 
-        for field in _document_fields:
-            if field not in IGNORED_FIELDS + [
-                'buffer',
-                'content',
-                'blob',
-                'uri',
-                'graph',
-            ]:
-                assert field in present_keys
+    assert len(Document.from_dict(doc).matches) == 0
+    assert Document.from_dict(doc).tags['tag'] == 'test'
