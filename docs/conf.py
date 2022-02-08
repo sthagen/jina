@@ -67,6 +67,10 @@ html_theme_options = {
 
     # start-announce
 
+    "announcement": '''
+    <a href="https://www.meetup.com/de-DE/jina-community-meetup/events/279857975/">Learn more about Jina and MindSpore at our Engineering All Hands on February 8</a>
+    ''',
+        
     # end-announce
 }
 
@@ -227,7 +231,7 @@ def setup(app):
     )
     app.add_config_value(
         name='server_address',
-        default=os.getenv('JINA_DOCSBOT_SERVER', 'https://docsbot.jina.ai'),
+        default=os.getenv('JINA_DOCSBOT_SERVER', 'https://jina-ai-jina-docsqa.jina.ai'),
         rebuild='',
     )
     app.connect('builder-inited', set_qa_server_address)
