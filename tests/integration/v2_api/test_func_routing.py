@@ -15,21 +15,19 @@ def test_func_simple_routing():
     f = Flow(port_expose=1234).add(uses=MyExecutor)
 
     with f:
-        results = Client(port=1234).post(
+        results = Client(return_responses=True, port=1234).post(
             on='/search',
             inputs=[(Document(), Document()) for _ in range(3)],
             parameters={'hello': 'world', 'topk': 10},
-            return_results=True,
         )
         assert results[0].header.status.code == 0
         assert results[0].data.docs[0].tags['hello'] == 'world'
 
     with f:
-        results = Client(port=1234).post(
+        results = Client(return_responses=True, port=1234).post(
             on='/random',
             inputs=[Document() for _ in range(3)],
             parameters={'hello': 'world', 'topk': 10},
-            return_results=True,
         )
         assert results[0].header.status.code == 0
 
@@ -43,10 +41,9 @@ def test_func_failure():
     f = Flow(port_expose=1234).add(uses=MyExecutor)
 
     with f:
-        results = Client(port=1234).post(
+        results = Client(return_responses=True, port=1234).post(
             on='/search',
             inputs=[(Document(), Document()) for _ in range(3)],
-            return_results=True,
         )
         assert results[0].header.status.code == 3
 
@@ -62,7 +59,7 @@ def test_func_default_routing():
     f = Flow(port_expose=1234).add(uses=MyExecutor)
 
     with f:
-        Client(port=1234).post(
+        Client(return_responses=True, port=1234).post(
             on='/some_endpoint',
             inputs=[Document() for _ in range(3)],
             parameters={'hello': 'world', 'topk': 10},
@@ -78,7 +75,7 @@ def test_func_return_():
     f = Flow(port_expose=1234).add(uses=MyExecutor)
 
     with f:
-        Client(port=1234).post(
+        Client(return_responses=True, port=1234).post(
             on='/some_endpoint',
             inputs=[Document() for _ in range(3)],
             parameters={'hello': 'world', 'topk': 10},
@@ -121,7 +118,7 @@ def test_func_joiner(mocker):
         mock()
 
     with f:
-        Client(port=1234).post(
+        Client(return_responses=True, port=1234).post(
             on='/some_endpoint',
             inputs=[Document() for _ in range(3)],
             parameters={'hello': 'world', 'topk': 10},
@@ -135,7 +132,7 @@ def test_dealer_routing(mocker):
     f = Flow(port_expose=1234).add(shards=3)
     mock = mocker.Mock()
     with f:
-        Client(port=1234).post(
+        Client(return_responses=True, port=1234).post(
             on='/some_endpoint',
             inputs=[Document() for _ in range(100)],
             request_size=2,
@@ -161,7 +158,7 @@ def test_target_executor(mocker):
     with f:
         success_mock = mocker.Mock()
         fail_mock = mocker.Mock()
-        Client(port=1234).post(
+        Client(return_responses=True, port=1234).post(
             '/hello',
             target_executor='p0',
             inputs=Document(),
@@ -198,7 +195,7 @@ def test_target_executor_with_overlaped_name(mocker):
     with f:
         # both deployments are called, create no error
         mock = mocker.Mock()
-        Client(port=1234).post(
+        Client(return_responses=True, port=1234).post(
             on='/foo', target_executor='foo', inputs=Document(), on_done=mock
         )
         mock.assert_called()
@@ -207,10 +204,9 @@ def test_target_executor_with_overlaped_name(mocker):
 def test_target_executor_with_one_pathways():
     f = Flow(port_expose=1234).add().add(name='my_target')
     with f:
-        results = Client(port=1234).post(
+        results = Client(return_responses=True, port=1234).post(
             on='/search',
             inputs=Document(),
-            return_results=True,
             target_executor='my_target',
         )
         assert len(results[0].data.docs) == 1
@@ -223,10 +219,9 @@ def test_target_executor_with_two_pathways():
         .add(needs=['gateway', 'executor0'], name='my_target')
     )
     with f:
-        results = Client(port=1234).post(
+        results = Client(return_responses=True, port=1234).post(
             on='/search',
             inputs=Document(),
-            return_results=True,
             target_executor='my_target',
         )
         assert len(results[0].data.docs) == 1
@@ -240,10 +235,9 @@ def test_target_executor_with_two_pathways_one_skip():
         .add(name='my_target')
     )
     with f:
-        results = Client(port=1234).post(
+        results = Client(return_responses=True, port=1234).post(
             on='/search',
             inputs=Document(),
-            return_results=True,
             target_executor='my_target',
         )
         assert len(results[0].data.docs) == 1
@@ -252,10 +246,9 @@ def test_target_executor_with_two_pathways_one_skip():
 def test_target_executor_with_shards():
     f = Flow(port_expose=1234).add(shards=2).add(name='my_target')
     with f:
-        results = Client(port=1234).post(
+        results = Client(return_responses=True, port=1234).post(
             on='/search',
             inputs=Document(),
-            return_results=True,
             target_executor='my_target',
         )
         assert len(results[0].data.docs) == 1

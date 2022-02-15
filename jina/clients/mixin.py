@@ -43,7 +43,6 @@ class PostMixin:
         request_size: int = 100,
         show_progress: bool = False,
         continue_on_error: bool = False,
-        return_results: bool = False,
         **kwargs,
     ) -> Optional[Union['DocumentArray', List['Response']]]:
         """Post a general data request to the Flow.
@@ -58,7 +57,6 @@ class PostMixin:
         :param request_size: the number of Documents per request. <=0 means all inputs in one request.
         :param show_progress: if set, client will show a progress bar on receiving every request.
         :param continue_on_error: if set, a Request that causes callback error will be logged only without blocking the further requests.
-        :param return_results: if set, the Documents resulting from all Requests will be returned as a DocumentArray. This is useful when one wants process Responses in bulk instead of using callback.
         :param kwargs: additional parameters
         :return: None or DocumentArray containing all response Documents
 
@@ -66,6 +64,8 @@ class PostMixin:
             ``target_executor`` uses ``re.match`` for checking if the pattern is matched.
              ``target_executor=='foo'`` will match both deployments with the name ``foo`` and ``foo_what_ever_suffix``.
         """
+
+        return_results = False
 
         async def _get_results(*args, **kwargs):
             result = []
@@ -77,7 +77,7 @@ class PostMixin:
                     result.append(resp)
 
             if return_results:
-                if c.args.results_as_docarray:
+                if not c.args.return_responses:
                     docs = [r.data.docs for r in result]
                     if len(docs) < 1:
                         return docs

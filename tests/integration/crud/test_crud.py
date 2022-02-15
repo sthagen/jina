@@ -36,7 +36,7 @@ def test_crud(tmpdir, rest):
     os.environ['WORKSPACE'] = str(tmpdir)
 
     with Flow.load_config('flow.yml') as f:
-        c = Client(port=f.port_expose)
+        c = Client(port=f.port_expose, return_responses=True)
         original_docs = list(random_docs(10, chunks_per_doc=0))
         if rest:
             rest_post(f, 'index', original_docs)
@@ -47,7 +47,7 @@ def test_crud(tmpdir, rest):
             )
 
     with Flow.load_config('flow.yml') as f:
-        c = Client(port=f.port_expose)
+        c = Client(port=f.port_expose, return_responses=True)
         inputs = list(random_docs(1))
         if rest:
             results = rest_post(f, 'search', inputs)
@@ -55,9 +55,7 @@ def test_crud(tmpdir, rest):
             for doc in results['data']:
                 assert Document.from_dict(doc).text == 'hello world'
         else:
-            results = c.post(
-                on='/search', inputs=inputs, parameters=PARAMS, return_results=True
-            )
+            results = c.post(on='/search', inputs=inputs, parameters=PARAMS)
             matches = results[0].docs[0].matches
             for doc in results[0].docs:
                 assert doc.text == 'hello world'
@@ -65,7 +63,7 @@ def test_crud(tmpdir, rest):
         assert len(matches) == 10
 
     with Flow.load_config('flow.yml') as f:
-        c = Client(port=f.port_expose)
+        c = Client(port=f.port_expose, return_responses=True)
         inputs = list(random_docs(5, chunks_per_doc=0))
 
         if rest:
@@ -75,7 +73,7 @@ def test_crud(tmpdir, rest):
             c.post(on='/delete', inputs=inputs)
 
     with Flow.load_config('flow.yml') as f:
-        c = Client(port=f.port_expose)
+        c = Client(port=f.port_expose, return_responses=True)
         inputs = list(random_docs(1))
 
         if rest:
@@ -83,9 +81,7 @@ def test_crud(tmpdir, rest):
             matches = results['data'][0]['matches']
 
         else:
-            results = c.post(
-                on='/search', inputs=inputs, parameters=PARAMS, return_results=True
-            )
+            results = c.post(on='/search', inputs=inputs, parameters=PARAMS)
             matches = results[0].docs[0].matches
 
         assert len(matches) == 5
@@ -95,14 +91,14 @@ def test_crud(tmpdir, rest):
     )
 
     with Flow.load_config('flow.yml') as f:
-        c = Client(port=f.port_expose)
+        c = Client(port=f.port_expose, return_responses=True)
         if rest:
             rest_post(f, 'update', updated_docs)
         else:
             c.post(on='/update', inputs=updated_docs)
 
     with Flow.load_config('flow.yml') as f:
-        c = Client(port=f.port_expose)
+        c = Client(port=f.port_expose, return_responses=True)
         inputs = list(random_docs(1))
         if rest:
             results = rest_post(f, 'search', inputs)
@@ -110,9 +106,7 @@ def test_crud(tmpdir, rest):
                 results['data'][0]['matches'], key=lambda match: match['id']
             )
         else:
-            results = c.post(
-                on='/search', inputs=inputs, parameters=PARAMS, return_results=True
-            )
+            results = c.post(on='/search', inputs=inputs, parameters=PARAMS)
             matches = sorted(results[0].docs[0].matches, key=lambda match: match.id)
 
         assert len(matches) == 5

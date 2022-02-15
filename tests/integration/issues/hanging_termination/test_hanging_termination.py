@@ -63,7 +63,7 @@ class MergeExecutor(Executor):
 
 def get_client(port):
     args = set_client_cli_parser().parse_args(
-        ['--host', 'localhost', '--port', str(port)]
+        ['--host', 'localhost', '--port', str(port), '--return-responses']
     )
 
     return Client(args)
@@ -131,8 +131,6 @@ def test_dump_reload(tmpdir, shards, nr_docs, emb_size, times_to_index=2):
                     )
 
                 for i in range(5):
-                    result = client_query.post(
-                        on='/search', inputs=[Document()], return_results=True
-                    )
+                    result = client_query.post(on='/search', inputs=[Document()])
 
                     assert len(docs) == len(result[0].docs)

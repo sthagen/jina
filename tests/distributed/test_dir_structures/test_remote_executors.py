@@ -93,10 +93,9 @@ def test_remote_executor_via_config_yaml(upload_files, config_yml):
         host=CLOUD_HOST, uses=config_yml, upload_files=upload_files
     )
     with f:
-        resp = Client(port=exposed_port).post(
+        resp = Client(port=exposed_port, return_responses=True).post(
             on='/',
             inputs=Document(text=config_yml),
-            return_results=True,
         )
     assert resp[0].data.docs[0].text == config_yml * 2
 
@@ -126,9 +125,8 @@ def test_remote_executor_via_pymodules(upload_files, uses, py_modules):
         upload_files=upload_files,
     )
     with f:
-        resp = Client(port=exposed_port).post(
+        resp = Client(port=exposed_port, return_responses=True).post(
             on='/',
             inputs=Document(text=py_modules),
-            return_results=True,
         )
     assert resp[0].data.docs[0].text == py_modules * 2

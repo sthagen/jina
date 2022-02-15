@@ -66,9 +66,9 @@ def test_load_save_yml(tmp_path):
 )
 def test_load_yaml_route(req_endpoint, doc_text):
     f = Flow(port_expose=12345).add(uses=y)
-    c = Client(port=exposed_port)
+    c = Client(port=exposed_port, return_responses=True)
 
     with f:
-        results = c.post(req_endpoint, Document(), return_results=True)
+        results = c.post(req_endpoint, Document())
 
     assert results[0].docs[0].text == doc_text

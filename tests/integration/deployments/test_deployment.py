@@ -31,10 +31,10 @@ async def test_deployments_trivial_topology(port_generator):
     with gateway_deployment, worker_deployment:
 
         # send requests to the gateway
-        c = Client(host='localhost', port=port_expose, asyncio=True)
-        responses = c.post(
-            '/', inputs=async_inputs, request_size=1, return_results=True
+        c = Client(
+            host='localhost', port=port_expose, asyncio=True, return_responses=True
         )
+        responses = c.post('/', inputs=async_inputs, request_size=1)
 
         response_list = []
         async for response in responses:
@@ -102,8 +102,8 @@ async def test_deployments_flow_topology(
     await asyncio.sleep(0.1)
 
     # send requests to the gateway
-    c = Client(host='localhost', port=port_expose, asyncio=True)
-    responses = c.post('/', inputs=async_inputs, request_size=1, return_results=True)
+    c = Client(host='localhost', port=port_expose, asyncio=True, return_responses=True)
+    responses = c.post('/', inputs=async_inputs, request_size=1)
     response_list = []
     async for response in responses:
         response_list.append(response)
@@ -145,8 +145,8 @@ async def test_deployments_shards(polling, port_generator):
 
     await asyncio.sleep(1.0)
 
-    c = Client(host='localhost', port=port_expose, asyncio=True)
-    responses = c.post('/', inputs=async_inputs, request_size=1, return_results=True)
+    c = Client(host='localhost', port=port_expose, asyncio=True, return_responses=True)
+    responses = c.post('/', inputs=async_inputs, request_size=1)
     response_list = []
     async for response in responses:
         response_list.append(response)
@@ -180,8 +180,8 @@ async def test_deployments_replicas(port_generator):
 
     await asyncio.sleep(1.0)
 
-    c = Client(host='localhost', port=port_expose, asyncio=True)
-    responses = c.post('/', inputs=async_inputs, request_size=1, return_results=True)
+    c = Client(host='localhost', port=port_expose, asyncio=True, return_responses=True)
+    responses = c.post('/', inputs=async_inputs, request_size=1)
     response_list = []
     async for response in responses:
         response_list.append(response)
@@ -220,8 +220,8 @@ async def test_deployments_with_executor(port_generator):
 
     await asyncio.sleep(1.0)
 
-    c = Client(host='localhost', port=port_expose, asyncio=True)
-    responses = c.post('/', inputs=async_inputs, request_size=1, return_results=True)
+    c = Client(host='localhost', port=port_expose, asyncio=True, return_responses=True)
+    responses = c.post('/', inputs=async_inputs, request_size=1)
     response_list = []
     async for response in responses:
         response_list.append(response.docs)
@@ -259,9 +259,9 @@ async def test_deployments_with_replicas_advance_faster(port_generator):
 
     await asyncio.sleep(1.0)
 
-    c = Client(host='localhost', port=port_expose, asyncio=True)
+    c = Client(host='localhost', port=port_expose, asyncio=True, return_responses=True)
     input_docs = [Document(text='slow'), Document(text='fast')]
-    responses = c.post('/', inputs=input_docs, request_size=1, return_results=True)
+    responses = c.post('/', inputs=input_docs, request_size=1)
     response_list = []
     async for response in responses:
         response_list.append(response)

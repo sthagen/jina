@@ -57,7 +57,9 @@ def test_reduce_shards(n_docs):
 
     with search_flow as f:
         da = DocumentArray([Document() for _ in range(5)])
-        resp = Client(port=exposed_port).post('/search', inputs=da, return_results=True)
+        resp = Client(port=exposed_port, return_responses=True).post(
+            '/search', inputs=da
+        )
 
     assert len(resp[0].docs) == 5
 
@@ -94,7 +96,9 @@ def test_uses_after_no_reduce(n_shards, n_docs):
 
     with search_flow as f:
         da = DocumentArray([Document() for _ in range(5)])
-        resp = Client(port=exposed_port).post('/search', inputs=da, return_results=True)
+        resp = Client(port=exposed_port, return_responses=True).post(
+            '/search', inputs=da
+        )
 
     # assert no reduce happened
     assert len(resp[0].docs) == 1
@@ -147,7 +151,7 @@ def test_reduce_needs():
 
     with flow as f:
         da = DocumentArray([Document() for _ in range(5)])
-        resp = Client(port=exposed_port).post('/', inputs=da, return_results=True)
+        resp = Client(port=exposed_port, return_responses=True).post('/', inputs=da)
 
     assert len(resp[0].docs) == 5
     for doc in resp[0].docs:
@@ -168,7 +172,7 @@ def test_uses_before_reduce():
 
     with flow as f:
         da = DocumentArray([Document() for _ in range(5)])
-        resp = Client(port=exposed_port).post('/', inputs=da, return_results=True)
+        resp = Client(port=exposed_port, return_responses=True).post('/', inputs=da)
 
     # assert reduce happened because there is only BaseExecutor as uses_before
     assert len(resp[0].docs) == 5
@@ -185,7 +189,7 @@ def test_uses_before_no_reduce_real_executor():
 
     with flow as f:
         da = DocumentArray([Document() for _ in range(5)])
-        resp = Client(port=exposed_port).post('/', inputs=da, return_results=True)
+        resp = Client(port=exposed_port, return_responses=True).post('/', inputs=da)
 
     # assert no reduce happened
     assert len(resp[0].docs) == 1
@@ -203,7 +207,7 @@ def test_uses_before_no_reduce_real_executor_uses():
 
     with flow as f:
         da = DocumentArray([Document() for _ in range(5)])
-        resp = Client(port=exposed_port).post('/', inputs=da, return_results=True)
+        resp = Client(port=exposed_port, return_responses=True).post('/', inputs=da)
 
     # assert no reduce happened
     assert len(resp[0].docs) == 1
@@ -218,8 +222,8 @@ def test_reduce_status():
 
     with flow as f:
         da = DocumentArray([Document() for _ in range(5)])
-        resp = Client(port=exposed_port).post(
-            '/status', parameters={'foo': 'bar'}, inputs=da, return_results=True
+        resp = Client(port=exposed_port, return_responses=True).post(
+            '/status', parameters={'foo': 'bar'}, inputs=da
         )
 
     assert resp[0].parameters['foo'] == 'bar'

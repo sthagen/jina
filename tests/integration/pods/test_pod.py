@@ -42,10 +42,10 @@ async def test_pods_trivial_topology(port_generator):
 
         # send requests to the gateway
         gateway_pod.wait_start_success()
-        c = Client(host='localhost', port=port_expose, asyncio=True)
-        responses = c.post(
-            '/', inputs=async_inputs, request_size=1, return_results=True
+        c = Client(
+            return_responses=True, host='localhost', port=port_expose, asyncio=True
         )
+        responses = c.post('/', inputs=async_inputs, request_size=1)
 
         response_list = []
         async for response in responses:
@@ -140,8 +140,8 @@ async def test_pods_flow_topology(
     await asyncio.sleep(0.1)
 
     # send requests to the gateway
-    c = Client(host='localhost', port=port_expose, asyncio=True)
-    responses = c.post('/', inputs=async_inputs, request_size=1, return_results=True)
+    c = Client(return_responses=True, host='localhost', port=port_expose, asyncio=True)
+    responses = c.post('/', inputs=async_inputs, request_size=1)
     response_list = []
     async for response in responses:
         response_list.append(response)
@@ -197,8 +197,8 @@ async def test_pods_shards(polling, port_generator):
     await asyncio.sleep(1.0)
 
     gateway_pod.wait_start_success()
-    c = Client(host='localhost', port=port_expose, asyncio=True)
-    responses = c.post('/', inputs=async_inputs, request_size=1, return_results=True)
+    c = Client(return_responses=True, host='localhost', port=port_expose, asyncio=True)
+    responses = c.post('/', inputs=async_inputs, request_size=1)
     response_list = []
     async for response in responses:
         response_list.append(response)
@@ -252,8 +252,8 @@ async def test_pods_replicas(port_generator):
     await asyncio.sleep(1.0)
 
     gateway_pod.wait_start_success()
-    c = Client(host='localhost', port=port_expose, asyncio=True)
-    responses = c.post('/', inputs=async_inputs, request_size=1, return_results=True)
+    c = Client(return_responses=True, host='localhost', port=port_expose, asyncio=True)
+    responses = c.post('/', inputs=async_inputs, request_size=1)
     response_list = []
     async for response in responses:
         response_list.append(response)
@@ -320,8 +320,8 @@ async def test_pods_with_executor(port_generator):
 
     await asyncio.sleep(1.0)
 
-    c = Client(host='localhost', port=port_expose, asyncio=True)
-    responses = c.post('/', inputs=async_inputs, request_size=1, return_results=True)
+    c = Client(return_responses=True, host='localhost', port=port_expose, asyncio=True)
+    responses = c.post('/', inputs=async_inputs, request_size=1)
     response_list = []
     async for response in responses:
         response_list.append(response.docs)
@@ -364,8 +364,8 @@ async def test_pods_gateway_worker_direct_connection(port_generator):
 
     worker_pod.wait_start_success()
     gateway_pod.wait_start_success()
-    c = Client(host='localhost', port=port_expose, asyncio=True)
-    responses = c.post('/', inputs=async_inputs, request_size=1, return_results=True)
+    c = Client(return_responses=True, host='localhost', port=port_expose, asyncio=True)
+    responses = c.post('/', inputs=async_inputs, request_size=1)
     response_list = []
     async for response in responses:
         response_list.append(response)
@@ -414,9 +414,9 @@ async def test_pods_with_replicas_advance_faster(port_generator):
         activate_msg.add_related_entity('worker', '127.0.0.1', pod.args.port_in)
         GrpcConnectionPool.send_request_sync(activate_msg, f'127.0.0.1:{head_port}')
 
-    c = Client(host='localhost', port=port_expose, asyncio=True)
+    c = Client(return_responses=True, host='localhost', port=port_expose, asyncio=True)
     input_docs = [Document(text='slow'), Document(text='fast')]
-    responses = c.post('/', inputs=input_docs, request_size=1, return_results=True)
+    responses = c.post('/', inputs=input_docs, request_size=1)
     response_list = []
     async for response in responses:
         response_list.append(response)
