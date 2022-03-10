@@ -102,10 +102,10 @@ def mixin_graphql_parser(parser=None):
 
     gp = add_arg_group(parser, title='GraphQL')
     gp.add_argument(
-        '--no-graphql-endpoint',
+        '--expose-graphql-endpoint',
         action='store_true',
         default=False,
-        help='If set, /graphql endpoint is removed from HTTP interface. ',
+        help='If set, /graphql endpoint is added to HTTP interface. ',
     )
 
 
@@ -198,39 +198,4 @@ def mixin_prefetch_parser(parser=None):
     Number of requests fetched from the client before feeding into the first Executor. 
     
     Used to control the speed of data input into a Flow. 0 disables prefetch (disabled by default)''',
-    )
-
-
-def mixin_compressor_parser(parser=None):
-    """Add the options for compressors
-    :param parser: the parser
-    """
-    gp = add_arg_group(parser, title='Compression')
-
-    gp.add_argument(
-        '--compress',
-        type=CompressAlgo.from_string,
-        choices=list(CompressAlgo),
-        default=CompressAlgo.NONE,
-        help='''
-    The compress algorithm used over the entire Flow.
-
-    Note that this is not necessarily effective,
-    it depends on the settings of `--compress-min-bytes` and `compress-min-ratio`''',
-    )
-
-    gp.add_argument(
-        '--compress-min-bytes',
-        type=int,
-        default=1024,
-        help='The original message size must be larger than this number to trigger the compress algorithm, '
-        '-1 means disable compression.',
-    )
-
-    gp.add_argument(
-        '--compress-min-ratio',
-        type=float,
-        default=1.1,
-        help='The compression ratio (uncompressed_size/compressed_size) must be higher than this number '
-        'to trigger the compress algorithm.',
     )

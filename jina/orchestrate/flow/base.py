@@ -40,15 +40,15 @@ from jina.excepts import (
     RuntimeFailToStart,
 )
 from jina.helper import (
+    GRAPHQL_MIN_DOCARRAY_VERSION,
     ArgNamespace,
     CatchAllCleanupContextManager,
     colored,
+    docarray_graphql_compatible,
     download_mermaid_url,
     get_internal_ip,
     get_public_ip,
     typename,
-    docarray_graphql_compatible,
-    GRAPHQL_MIN_DOCARRAY_VERSION,
 )
 from jina.jaml import JAMLCompatible
 from jina.logging.logger import JinaLogger
@@ -125,9 +125,6 @@ class Flow(PostMixin, JAMLCompatible, ExitStack, metaclass=FlowType):
     def __init__(
         self,
         *,
-        compress: Optional[str] = 'NONE',
-        compress_min_bytes: Optional[int] = 1024,
-        compress_min_ratio: Optional[float] = 1.1,
         connection_list: Optional[str] = None,
         cors: Optional[bool] = False,
         daemon: Optional[bool] = False,
@@ -137,7 +134,7 @@ class Flow(PostMixin, JAMLCompatible, ExitStack, metaclass=FlowType):
         disable_reduce: Optional[bool] = False,
         env: Optional[dict] = None,
         expose_endpoints: Optional[str] = None,
-        expose_public: Optional[bool] = False,
+        expose_graphql_endpoint: Optional[bool] = False,
         graph_description: Optional[str] = '{}',
         host: Optional[str] = '0.0.0.0',
         host_in: Optional[str] = '0.0.0.0',
@@ -146,7 +143,6 @@ class Flow(PostMixin, JAMLCompatible, ExitStack, metaclass=FlowType):
         native: Optional[bool] = False,
         no_crud_endpoints: Optional[bool] = False,
         no_debug_endpoints: Optional[bool] = False,
-        no_graphql_endpoint: Optional[bool] = False,
         polling: Optional[str] = 'ANY',
         port: Optional[int] = None,
         prefetch: Optional[int] = 0,
@@ -174,12 +170,6 @@ class Flow(PostMixin, JAMLCompatible, ExitStack, metaclass=FlowType):
     ):
         """Create a Flow. Flow is how Jina streamlines and scales Executors. This overloaded method provides arguments from `jina gateway` CLI.
 
-        :param compress: The compress algorithm used over the entire Flow.
-
-              Note that this is not necessarily effective,
-              it depends on the settings of `--compress-min-bytes` and `compress-min-ratio`
-        :param compress_min_bytes: The original message size must be larger than this number to trigger the compress algorithm, -1 means disable compression.
-        :param compress_min_ratio: The compression ratio (uncompressed_size/compressed_size) must be higher than this number to trigger the compress algorithm.
         :param connection_list: dictionary JSON with a list of connections to configure
         :param cors: If set, a CORS middleware is added to FastAPI frontend to allow cross-origin access.
         :param daemon: The Pod attempts to terminate all of its Runtime child processes/threads on existing. setting it to true basically tell the Pod do not wait on the Runtime when closing
@@ -189,7 +179,7 @@ class Flow(PostMixin, JAMLCompatible, ExitStack, metaclass=FlowType):
         :param disable_reduce: Disable the built-in reduce mechanism, set this if the reduction is to be handled by the Executor connected to this Head
         :param env: The map of environment variables that are available inside runtime
         :param expose_endpoints: A JSON string that represents a map from executor endpoints (`@requests(on=...)`) to HTTP endpoints.
-        :param expose_public: If set, expose the public IP address to remote when necessary, by default it exposesprivate IP address, which only allows accessing under the same network/subnet. Important to set this to true when the Pod will receive input connections from remote Pods
+        :param expose_graphql_endpoint: If set, /graphql endpoint is added to HTTP interface.
         :param graph_description: Routing graph for the gateway
         :param host: The host address of the runtime, by default it is 0.0.0.0.
         :param host_in: The host address for binding to, by default it is 0.0.0.0
@@ -208,7 +198,6 @@ class Flow(PostMixin, JAMLCompatible, ExitStack, metaclass=FlowType):
 
                   Any executor that has `@requests(on=...)` bind with those values will receive data requests.
         :param no_debug_endpoints: If set, /status /post endpoints are removed from HTTP interface.
-        :param no_graphql_endpoint: If set, /graphql endpoint is removed from HTTP interface.
         :param polling: The polling strategy of the Deployment and its endpoints (when `shards>1`).
               Can be defined for all endpoints of a Deployment or by endpoint.
               Define per Deployment:
@@ -270,10 +259,10 @@ class Flow(PostMixin, JAMLCompatible, ExitStack, metaclass=FlowType):
         self,
         *,
         env: Optional[dict] = None,
+        expose_graphql_endpoint: Optional[bool] = False,
         inspect: Optional[str] = 'COLLECT',
         log_config: Optional[str] = None,
         name: Optional[str] = None,
-        no_graphql_endpoint: Optional[bool] = False,
         polling: Optional[str] = 'ANY',
         quiet: Optional[bool] = False,
         quiet_error: Optional[bool] = False,
@@ -285,6 +274,7 @@ class Flow(PostMixin, JAMLCompatible, ExitStack, metaclass=FlowType):
         """Create a Flow. Flow is how Jina streamlines and scales Executors. This overloaded method provides arguments from `jina flow` CLI.
 
         :param env: The map of environment variables that are available inside runtime
+        :param expose_graphql_endpoint: If set, /graphql endpoint is added to HTTP interface.
         :param inspect: The strategy on those inspect deployments in the flow.
 
               If `REMOVE` is given then all inspect deployments are removed when building the flow.
@@ -298,7 +288,6 @@ class Flow(PostMixin, JAMLCompatible, ExitStack, metaclass=FlowType):
           - ...
 
           When not given, then the default naming strategy will apply.
-        :param no_graphql_endpoint: If set, /graphql endpoint is removed from HTTP interface.
         :param polling: The polling strategy of the Deployment and its endpoints (when `shards>1`).
               Can be defined for all endpoints of a Deployment or by endpoint.
               Define per Deployment:
@@ -336,13 +325,13 @@ class Flow(PostMixin, JAMLCompatible, ExitStack, metaclass=FlowType):
         self._update_args(args, **kwargs)
         if (
             self.protocol == GatewayProtocolType.HTTP
-            and not self.args.no_graphql_endpoint
+            and self.args.expose_graphql_endpoint
             and not docarray_graphql_compatible()
         ):
-            self.args.no_graphql_endpoint = True
+            self.args.expose_graphql_endpoint = False
             warnings.warn(
                 'DocArray version is incompatible with GraphQL features. '
-                'Automatically setting no_graphql_endpoint=True. '
+                'Automatically setting expose_graphql_endpoint=False. '
                 f'To use GraphQL features, install docarray>={GRAPHQL_MIN_DOCARRAY_VERSION}'
             )
 
@@ -460,8 +449,8 @@ class Flow(PostMixin, JAMLCompatible, ExitStack, metaclass=FlowType):
         kwargs.update(self._common_kwargs)
         args = ArgNamespace.kwargs2namespace(kwargs, set_gateway_parser())
         args.noblock_on_start = True
-        args.no_graphql_endpoint = (
-            self.args.no_graphql_endpoint
+        args.expose_graphql_endpoint = (
+            self.args.expose_graphql_endpoint
         )  # also used in Flow, thus not in kwargs
         args.graph_description = json.dumps(graph_description)
         args.deployments_addresses = json.dumps(deployments_addresses)
@@ -595,7 +584,6 @@ class Flow(PostMixin, JAMLCompatible, ExitStack, metaclass=FlowType):
         docker_kwargs: Optional[dict] = None,
         entrypoint: Optional[str] = None,
         env: Optional[dict] = None,
-        expose_public: Optional[bool] = False,
         external: Optional[bool] = False,
         force_update: Optional[bool] = False,
         gpus: Optional[str] = None,
@@ -643,7 +631,6 @@ class Flow(PostMixin, JAMLCompatible, ExitStack, metaclass=FlowType):
           More details can be found in the Docker SDK docs:  https://docker-py.readthedocs.io/en/stable/
         :param entrypoint: The entrypoint command overrides the ENTRYPOINT in Docker image. when not set then the Docker image ENTRYPOINT takes effective.
         :param env: The map of environment variables that are available inside runtime
-        :param expose_public: If set, expose the public IP address to remote when necessary, by default it exposesprivate IP address, which only allows accessing under the same network/subnet. Important to set this to true when the Pod will receive input connections from remote Pods
         :param external: The Deployment will be considered an external Deployment that has been started independently from the Flow.This Deployment will not be context managed by the Flow.
         :param force_update: If set, always pull the latest Hub Executor bundle even it exists on local
         :param gpus: This argument allows dockerized Jina executor discover local gpu devices.
@@ -1521,7 +1508,7 @@ class Flow(PostMixin, JAMLCompatible, ExitStack, metaclass=FlowType):
                     attrs='underline',
                 )
             )
-            if not self.args.no_graphql_endpoint:
+            if self.args.expose_graphql_endpoint:
                 address_table.append(
                     f'\t💬 GraphQL UI:\t\t'
                     + colored(
