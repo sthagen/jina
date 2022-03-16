@@ -141,6 +141,9 @@
 
 
 
+
+
+
 # Change Logs
 
 Jina is released on every Friday evening. The PyPi package and Docker Image will be updated, the changes of the release will be tracked by this file.
@@ -410,6 +413,9 @@ Jina is released on every Friday evening. The PyPi package and Docker Image will
 - [Release Note (`3.1.2`)](#release-note-312)
 - [Release Note (`3.1.3`)](#release-note-313)
 - [Release Note (`3.1.4`)](#release-note-314)
+- [Release Note (`3.1.5`)](#release-note-315)
+- [Release Note (`3.1.6`)](#release-note-316)
+- [Release Note (`3.2.0`)](#release-note-320)
 
 <!-- END doctoc generated TOC please keep comment here to allow auto update -->
 
@@ -12477,4 +12483,66 @@ Jina is released on every Friday evening. The PyPi package and Docker Image will
  - [[```a1f9c3a3```](https://github.com/jina-ai/jina/commit/a1f9c3a3a0500a8d6ceb295ca0e84525c2b4d6e7)] __-__ __contributor__: update contributors (*Jina Dev Bot*)
  - [[```20b67226```](https://github.com/jina-ai/jina/commit/20b672269e1b658e4fb8d255778e25280c89d79f)] __-__ __docs__: update TOC (*Jina Dev Bot*)
  - [[```7dceff65```](https://github.com/jina-ai/jina/commit/7dceff65f2d93bc81989251387eea8f3528a2fde)] __-__ __version__: the next version will be 3.1.4 (*Jina Dev Bot*)
+
+<a name=release-note-3-1-5></a>
+## Release Note (`3.1.5`)
+
+> Release time: 2022-03-15 12:21:38
+
+
+
+🙇 We'd like to thank all contributors for this new release! In particular,
+ Han Xiao,  Jina Dev Bot,  🙇
+
+
+### 🆕 New Features
+
+ - [[```9e054615```](https://github.com/jina-ai/jina/commit/9e0546155eabe47650443f8c159f636d0429e150)] __-__ __executor__: add serve function (#4475) (*Han Xiao*)
+
+### 🍹 Other Improvements
+
+ - [[```18c2b242```](https://github.com/jina-ai/jina/commit/18c2b2424b1fafdbace392c4a86ab6a6600a734c)] __-__ __docs__: update TOC (*Jina Dev Bot*)
+ - [[```4e6d278a```](https://github.com/jina-ai/jina/commit/4e6d278af3c6272780ccf3aecbc955cbf9701a51)] __-__ __contributor__: update contributors (*Jina Dev Bot*)
+ - [[```19e470ae```](https://github.com/jina-ai/jina/commit/19e470ae3660270d401461bd3159f0f58cf6341d)] __-__ __version__: the next version will be 3.1.5 (*Jina Dev Bot*)
+
+<a name=release-note-3-1-6></a>
+## Release Note (`3.1.6`)
+
+> Release time: 2022-03-15 15:00:32
+
+
+
+🙇 We'd like to thank all contributors for this new release! In particular,
+ samsja,  Shubham Saboo,  Jina Dev Bot,  🙇
+
+
+### 🆕 New Features
+
+ - [[```59e7bb51```](https://github.com/jina-ai/jina/commit/59e7bb51d7a49a32da53dfa06847b58ace75b818)] __-__ health check docker (#4467) (*samsja*)
+
+### 🍹 Other Improvements
+
+ - [[```622c362d```](https://github.com/jina-ai/jina/commit/622c362d094986ab451d72f3dbb72d1951117b37)] __-__ add learning bootcamp call to action (#4485) (*Shubham Saboo*)
+ - [[```084ab6c5```](https://github.com/jina-ai/jina/commit/084ab6c532f2252d27c6c420b73541db9cfd1218)] __-__ __version__: the next version will be 3.1.6 (*Jina Dev Bot*)
+
+<a name=release-note-3-2-0></a>
+## Release Note (`3.2.0`)
+
+> Release time: 2022-03-15 17:12:36
+
+
+
+🙇 We'd like to thank all contributors for this new release! In particular,
+ Joan Fontanals Martinez,  Johannes Messner,  Jina Dev Bot,  🙇
+
+
+### 🆕 New Features
+
+ - [[```a27ea8a4```](https://github.com/jina-ai/jina/commit/a27ea8a46e96ecc96ab1e41f79aa0825341511c9)] __-__ input filters for executors (#4472) (*Johannes Messner*)
+ - [[```ceb51082```](https://github.com/jina-ai/jina/commit/ceb51082b4ec6f31811945ffc67b734acbbebac2)] __-__ convert embedding/tensor array type at executor level (#4484) (*Johannes Messner*)
+
+### 🍹 Other Improvements
+
+ - [[```aabdfeda```](https://github.com/jina-ai/jina/commit/aabdfeda7e784ee89a93d972f2d2527a5e473619)] __-__ bump version number (*Joan Fontanals Martinez*)
+ - [[```c6781e4a```](https://github.com/jina-ai/jina/commit/c6781e4a6e20fb078e5b70e636114120cfda797b)] __-__ __version__: the next version will be 3.1.7 (*Jina Dev Bot*)
 
