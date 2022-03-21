@@ -1,7 +1,6 @@
 import argparse
 import base64
 import copy
-import itertools
 import json
 import multiprocessing
 import os
@@ -100,22 +99,22 @@ class Flow(PostMixin, JAMLCompatible, ExitStack, metaclass=FlowType):
         *,
         asyncio: Optional[bool] = False,
         host: Optional[str] = '0.0.0.0',
-        https: Optional[bool] = False,
         port: Optional[int] = None,
         protocol: Optional[str] = 'GRPC',
         proxy: Optional[bool] = False,
         return_responses: Optional[bool] = False,
+        tls: Optional[bool] = False,
         **kwargs,
     ):
         """Create a Flow. Flow is how Jina streamlines and scales Executors. This overloaded method provides arguments from `jina client` CLI.
 
         :param asyncio: If set, then the input and output of this Client work in an asynchronous manner.
         :param host: The host address of the runtime, by default it is 0.0.0.0.
-        :param https: If set, connect to gateway using https
         :param port: The port of the Gateway, which the client should connect to.
         :param protocol: Communication protocol between server and client.
         :param proxy: If set, respect the http_proxy and https_proxy environment variables. otherwise, it will unset these proxy variables before start. gRPC seems to prefer no proxy
         :param return_responses: If set, return results as List of Requests instead of a reduced DocArray.
+        :param tls: If set, connect to gateway using https
 
         .. # noqa: DAR202
         .. # noqa: DAR101
@@ -1496,7 +1495,7 @@ class Flow(PostMixin, JAMLCompatible, ExitStack, metaclass=FlowType):
         return self._deployment_nodes.items().__iter__()
 
     def _init_table(self):
-        table = Table(title=None, box=None, highlight=True)
+        table = Table(title=None, box=None, highlight=True, show_header=False)
         table.add_column('', justify='right')
         table.add_column('', justify='right')
         table.add_column('', justify='right')
@@ -1505,41 +1504,41 @@ class Flow(PostMixin, JAMLCompatible, ExitStack, metaclass=FlowType):
         return table
 
     def _get_address_table(self, address_table):
-        address_table.add_row('🔗', 'Protocol: ', f'{self.protocol}')
+        address_table.add_row('🔗', 'Protocol', f'{self.protocol}')
         address_table.add_row(
             '🏠',
-            'Local access: ',
+            'Local access',
             f'[underline]{self.host}:{self.port}[/underline]',
         )
         address_table.add_row(
             '🔒',
-            'Private network: ',
+            'Private network',
             f'[underline]{self.address_private}:{self.port}[/underline]',
         )
 
         if self.address_public:
             address_table.add_row(
                 '🌐',
-                'Public address: ',
+                'Public address',
                 f'[underline]{self.address_public}:{self.port}[/underline]',
             )
 
         if self.protocol == GatewayProtocolType.HTTP:
             address_table.add_row(
                 '💬',
-                'Swagger UI: ',
+                'Swagger UI',
                 f'[underline]http://localhost:{self.port}/docs[/underline]',
             )
 
             address_table.add_row(
                 '📚',
-                'Redoc: ',
+                'Redoc',
                 f'[underline]http://localhost:{self.port}/redoc[/underline]',
             )
             if self.args.expose_graphql_endpoint:
                 address_table.add_row(
                     '💬',
-                    'GraphQL UI: ',
+                    'GraphQL UI',
                     f'[underline][cyan]http://localhost:{self.port}/graphql[/underline][/cyan]',
                 )
 
