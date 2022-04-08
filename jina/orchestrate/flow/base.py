@@ -27,7 +27,7 @@ from typing import (
 from rich import print
 from rich.table import Table
 
-from jina import __default_host__, helper
+from jina import __default_host__, __docker_host__, helper
 from jina.clients import Client
 from jina.clients.mixin import AsyncPostMixin, PostMixin
 from jina.enums import (
@@ -39,6 +39,7 @@ from jina.enums import (
 from jina.excepts import (
     FlowMissingDeploymentError,
     FlowTopologyError,
+    PortAlreadyUsed,
     RuntimeFailToStart,
 )
 from jina.helper import (
@@ -51,6 +52,7 @@ from jina.helper import (
     get_internal_ip,
     get_public_ip,
     get_rich_console,
+    is_port_free,
     typename,
 )
 from jina.jaml import JAMLCompatible
@@ -65,6 +67,8 @@ from jina.parsers import (
 from jina.parsers.flow import set_flow_parser
 
 __all__ = ['Flow']
+
+from jina.serve.networking import host_is_local, in_docker
 
 
 class FlowType(type(ExitStack), type(JAMLCompatible)):
@@ -133,6 +137,7 @@ class Flow(PostMixin, JAMLCompatible, ExitStack, metaclass=FlowType):
         cors: Optional[bool] = False,
         default_swagger_ui: Optional[bool] = False,
         deployments_addresses: Optional[str] = '{}',
+        deployments_disable_reduce: Optional[str] = '[]',
         description: Optional[str] = None,
         disable_reduce: Optional[bool] = False,
         env: Optional[dict] = None,
@@ -183,6 +188,7 @@ class Flow(PostMixin, JAMLCompatible, ExitStack, metaclass=FlowType):
         :param cors: If set, a CORS middleware is added to FastAPI frontend to allow cross-origin access.
         :param default_swagger_ui: If set, the default swagger ui is used for `/docs` endpoint.
         :param deployments_addresses: dictionary JSON with the input addresses of each Deployment
+        :param deployments_disable_reduce: list JSON disabling the built-in merging mechanism for each Deployment listed
         :param description: The description of this HTTP server. It will be used in automatics docs such as Swagger UI.
         :param disable_reduce: Disable the built-in reduce mechanism, set this if the reduction is to be handled by the Executor connected to this Head
         :param env: The map of environment variables that are available inside runtime
@@ -450,6 +456,7 @@ class Flow(PostMixin, JAMLCompatible, ExitStack, metaclass=FlowType):
         graph_description: Dict[str, List[str]],
         deployments_addresses: Dict[str, List[str]],
         graph_conditions: Dict[str, Dict],
+        deployments_disabled_reduce: List[str],
         **kwargs,
     ):
         kwargs.update(
@@ -466,6 +473,7 @@ class Flow(PostMixin, JAMLCompatible, ExitStack, metaclass=FlowType):
 
         kwargs.update(self._common_kwargs)
         args = ArgNamespace.kwargs2namespace(kwargs, set_gateway_parser())
+
         args.noblock_on_start = True
         args.expose_graphql_endpoint = (
             self.args.expose_graphql_endpoint
@@ -473,6 +481,7 @@ class Flow(PostMixin, JAMLCompatible, ExitStack, metaclass=FlowType):
         args.graph_description = json.dumps(graph_description)
         args.graph_conditions = json.dumps(graph_conditions)
         args.deployments_addresses = json.dumps(deployments_addresses)
+        args.deployments_disable_reduce = json.dumps(deployments_disabled_reduce)
         self._deployment_nodes[GATEWAY_NAME] = Deployment(args, needs)
 
     def _get_deployments_addresses(self) -> Dict[str, List[str]]:
@@ -480,7 +489,15 @@ class Flow(PostMixin, JAMLCompatible, ExitStack, metaclass=FlowType):
         for node, v in self._deployment_nodes.items():
             if node == 'gateway':
                 continue
-            graph_dict[node] = [f'{v.protocol}://{v.host}:{v.head_port}']
+            if v.head_args:
+                # add head information
+                graph_dict[node] = [f'{v.protocol}://{v.host}:{v.head_port}']
+            else:
+                # there is no head, add the worker connection information instead
+                host = v.host
+                if host_is_local(host) and in_docker() and v.dockerized_uses:
+                    host = __docker_host__
+                graph_dict[node] = [f'{v.protocol}://{host}:{port}' for port in v.ports]
 
         return graph_dict
 
@@ -497,13 +514,18 @@ class Flow(PostMixin, JAMLCompatible, ExitStack, metaclass=FlowType):
 
             if v.external:
                 deployment_k8s_address = f'{v.host}'
-            else:
+            elif v.head_args:
                 deployment_k8s_address = (
                     f'{to_compatible_name(v.head_args.name)}.{k8s_namespace}.svc'
                 )
+            else:
+                deployment_k8s_address = (
+                    f'{to_compatible_name(v.name)}.{k8s_namespace}.svc'
+                )
 
+            external_port = v.head_port if v.head_port else v.port
             graph_dict[node] = [
-                f'{deployment_k8s_address}:{v.head_port if v.external else GrpcConnectionPool.K8S_PORT}'
+                f'{deployment_k8s_address}:{external_port if v.external else GrpcConnectionPool.K8S_PORT}'
             ]
 
         return graph_dict if graph_dict else None
@@ -516,9 +538,14 @@ class Flow(PostMixin, JAMLCompatible, ExitStack, metaclass=FlowType):
         for node, v in self._deployment_nodes.items():
             if node == 'gateway':
                 continue
-            deployment_docker_compose_address = (
-                f'{to_compatible_name(v.head_args.name)}:{port}'
-            )
+            elif v.head_args:
+                deployment_docker_compose_address = (
+                    f'{to_compatible_name(v.head_args.name)}:{port}'
+                )
+            else:
+                deployment_docker_compose_address = (
+                    f'{to_compatible_name(v.name)}:{port}'
+                )
             graph_dict[node] = [deployment_docker_compose_address]
 
         return graph_dict
@@ -530,6 +557,14 @@ class Flow(PostMixin, JAMLCompatible, ExitStack, metaclass=FlowType):
                 graph_condition[node] = v.args.when
 
         return graph_condition
+
+    def _get_disabled_reduce_deployments(self) -> List[str]:
+        disabled_deployments = []
+        for node, v in self._deployment_nodes.items():
+            if v.args.disable_reduce:
+                disabled_deployments.append(node)
+
+        return disabled_deployments
 
     def _get_graph_representation(self) -> Dict[str, List[str]]:
         def _add_node(graph, n):
@@ -605,6 +640,7 @@ class Flow(PostMixin, JAMLCompatible, ExitStack, metaclass=FlowType):
         *,
         compression: Optional[str] = 'NoCompression',
         connection_list: Optional[str] = None,
+        disable_auto_volume: Optional[bool] = False,
         disable_reduce: Optional[bool] = False,
         docker_kwargs: Optional[dict] = None,
         entrypoint: Optional[str] = None,
@@ -650,6 +686,7 @@ class Flow(PostMixin, JAMLCompatible, ExitStack, metaclass=FlowType):
 
         :param compression: The compression mechanism used when sending requests from the Head to the WorkerRuntimes. Possibilities are `NoCompression, Gzip, Deflate`. For more details, check https://grpc.github.io/grpc/python/grpc.html#compression.
         :param connection_list: dictionary JSON with a list of connections to configure
+        :param disable_auto_volume: Do not automatically mount a volume for dockerized Executors.
         :param disable_reduce: Disable the built-in reduce mechanism, set this if the reduction is to be handled by the Executor connected to this Head
         :param docker_kwargs: Dictionary of kwargs arguments that will be passed to Docker SDK when starting the docker '
           container.
@@ -730,9 +767,9 @@ class Flow(PostMixin, JAMLCompatible, ExitStack, metaclass=FlowType):
                   When use it under Python, one can use the following values additionally:
                   - a Python dict that represents the config
                   - a text file stream has `.read()` interface
-        :param uses_after: The executor attached after the Pods described by --uses, typically used for receiving from all shards, accepted type follows `--uses`
+        :param uses_after: The executor attached after the Pods described by --uses, typically used for receiving from all shards, accepted type follows `--uses`. This argument only applies for sharded Deployments (shards > 1).
         :param uses_after_address: The address of the uses-before runtime
-        :param uses_before: The executor attached after the Pods described by --uses, typically before sending to all shards, accepted type follows `--uses`
+        :param uses_before: The executor attached before the Pods described by --uses, typically before sending to all shards, accepted type follows `--uses`. This argument only applies for sharded Deployments (shards > 1).
         :param uses_before_address: The address of the uses-before runtime
         :param uses_metas: Dictionary of keyword arguments that will override the `metas` configuration in `uses`
         :param uses_requests: Dictionary of keyword arguments that will override the `requests` configuration in `uses`
@@ -995,6 +1032,7 @@ class Flow(PostMixin, JAMLCompatible, ExitStack, metaclass=FlowType):
                 graph_description=op_flow._get_graph_representation(),
                 deployments_addresses=op_flow._get_deployments_addresses(),
                 graph_conditions=op_flow._get_graph_conditions(),
+                deployments_disabled_reduce=op_flow._get_disabled_reduce_deployments(),
             )
 
         removed_deployments = []
@@ -1100,8 +1138,16 @@ class Flow(PostMixin, JAMLCompatible, ExitStack, metaclass=FlowType):
 
         :return: this instance
         """
+
         if self._build_level.value < FlowBuildLevel.GRAPH.value:
             self.build(copy_flow=False)
+
+        port_gateway = self._deployment_nodes[GATEWAY_NAME].args.port
+
+        if not (
+            is_port_free(__default_host__, port_gateway)
+        ):  # we check if the port is not used at parsing time as well for robustness
+            raise PortAlreadyUsed(f'port:{port_gateway}')
 
         # set env only before the Deployment get started
         if self.args.env:
@@ -1732,28 +1778,13 @@ class Flow(PostMixin, JAMLCompatible, ExitStack, metaclass=FlowType):
     # for backward support
     join = needs
 
-    def rolling_update(
-        self,
-        deployment_name: str,
-        uses_with: Optional[Dict] = None,
-    ):
-        """
-        Reload all replicas of a deployment sequentially
-
-        :param deployment_name: deployment to update
-        :param uses_with: a Dictionary of arguments to restart the executor with
-        """
-        from jina.helper import run_async
-
-        run_async(
-            self._deployment_nodes[deployment_name].rolling_update,
-            uses_with=uses_with,
-            any_event_loop=True,
-        )
-
     def to_k8s_yaml(self, output_base_path: str, k8s_namespace: Optional[str] = None):
         """
-        Converts the Flow into a set of yaml deployments to deploy in Kubernetes
+        Converts the Flow into a set of yaml deployments to deploy in Kubernetes.
+
+        If you don't want to rebuild image on Jina Hub,
+        you can set `JINA_HUB_NO_IMAGE_REBUILD` environment variable.
+
         :param output_base_path: The base path where to dump all the yaml files
         :param k8s_namespace: The name of the k8s namespace to set for the configurations. If None, the name of the Flow will be used.
         """
@@ -1794,7 +1825,9 @@ class Flow(PostMixin, JAMLCompatible, ExitStack, metaclass=FlowType):
         )
 
     def to_docker_compose_yaml(
-        self, output_path: Optional[str] = None, network_name: Optional[str] = None
+        self,
+        output_path: Optional[str] = None,
+        network_name: Optional[str] = None,
     ):
         """
         Converts the Flow into a yaml file to run with `docker-compose up`
@@ -1842,28 +1875,6 @@ class Flow(PostMixin, JAMLCompatible, ExitStack, metaclass=FlowType):
 
         self.logger.info(
             f'Docker compose file has been created under {output_path}. You can use it by running `{command}`'
-        )
-
-    def scale(
-        self,
-        deployment_name: str,
-        replicas: int,
-    ):
-        """
-        Scale the amount of replicas of a given Executor.
-
-        :param deployment_name: deployment to update
-        :param replicas: The number of replicas to scale to
-        """
-
-        # TODO when replicas-host is ready, needs to be passed here
-
-        from jina.helper import run_async
-
-        run_async(
-            self._deployment_nodes[deployment_name].scale,
-            replicas=replicas,
-            any_event_loop=True,
         )
 
     @property
