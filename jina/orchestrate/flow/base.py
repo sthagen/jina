@@ -1421,9 +1421,14 @@ class Flow(PostMixin, JAMLCompatible, ExitStack, metaclass=FlowType):
 
         # deepcopy causes the below error while reusing a Flow in Jupyter
         # 'Pickling an AuthenticationString object is disallowed for security reasons'
-        op_flow = copy.deepcopy(self) if copy_flow else self
+        # no need to deep copy if the Graph is built because no change will be made to the Flow
+        op_flow = (
+            copy.deepcopy(self)
+            if (copy_flow and self._build_level.value == FlowBuildLevel.EMPTY)
+            else self
+        )
 
-        if build:
+        if build and op_flow._build_level.value == FlowBuildLevel.EMPTY:
             op_flow.build(False)
 
         mermaid_str = op_flow._mermaid_str
@@ -1819,7 +1824,12 @@ class Flow(PostMixin, JAMLCompatible, ExitStack, metaclass=FlowType):
     # for backward support
     join = needs
 
-    def to_k8s_yaml(self, output_base_path: str, k8s_namespace: Optional[str] = None):
+    def to_k8s_yaml(
+        self,
+        output_base_path: str,
+        k8s_namespace: Optional[str] = None,
+        include_gateway: bool = True,
+    ):
         """
         Converts the Flow into a set of yaml deployments to deploy in Kubernetes.
 
@@ -1828,6 +1838,7 @@ class Flow(PostMixin, JAMLCompatible, ExitStack, metaclass=FlowType):
 
         :param output_base_path: The base path where to dump all the yaml files
         :param k8s_namespace: The name of the k8s namespace to set for the configurations. If None, the name of the Flow will be used.
+        :param include_gateway: Defines if the gateway deployment should be included, defaults to True
         """
         import yaml
 
@@ -1839,7 +1850,7 @@ class Flow(PostMixin, JAMLCompatible, ExitStack, metaclass=FlowType):
         k8s_namespace = k8s_namespace or self.args.name or 'default'
 
         for node, v in self._deployment_nodes.items():
-            if v.external:
+            if v.external or (node == 'gateway' and not include_gateway):
                 continue
             deployment_base = os.path.join(output_base_path, node)
             k8s_deployment = K8sDeploymentConfig(
@@ -1869,11 +1880,13 @@ class Flow(PostMixin, JAMLCompatible, ExitStack, metaclass=FlowType):
         self,
         output_path: Optional[str] = None,
         network_name: Optional[str] = None,
+        include_gateway: bool = True,
     ):
         """
         Converts the Flow into a yaml file to run with `docker-compose up`
         :param output_path: The output path for the yaml file
         :param network_name: The name of the network that will be used by the deployment name
+        :param include_gateway: Defines if the gateway deployment should be included, defaults to True
         """
         import yaml
 
@@ -1895,6 +1908,9 @@ class Flow(PostMixin, JAMLCompatible, ExitStack, metaclass=FlowType):
         services = {}
 
         for node, v in self._deployment_nodes.items():
+            if v.external or (node == 'gateway' and not include_gateway):
+                continue
+
             docker_compose_deployment = DockerComposeConfig(
                 args=v.args,
                 deployments_addresses=self._get_docker_compose_deployments_addresses(),
