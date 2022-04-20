@@ -2,21 +2,15 @@ import inspect
 import multiprocessing
 import os
 import threading
-import uuid
 import warnings
-from concurrent.futures import ThreadPoolExecutor
 from types import SimpleNamespace
 from typing import TYPE_CHECKING, Any, Dict, List, Optional, Type, Union
 
+from prometheus_client import Summary
+
 from jina import __args_executor_init__, __default_endpoint__
 from jina.enums import BetterEnum
-from jina.helper import (
-    ArgNamespace,
-    T,
-    iscoroutinefunction,
-    run_in_threadpool,
-    typename,
-)
+from jina.helper import ArgNamespace, T, iscoroutinefunction, typename
 from jina.jaml import JAML, JAMLCompatible, env_var_regex, internal_var_regex
 from jina.serve.executors.decorators import requests, store_init_kwargs, wrap_func
 
@@ -109,16 +103,28 @@ class BaseExecutor(JAMLCompatible, metaclass=ExecutorType):
         :param runtime_args: a dict of arguments injected from :class:`Runtime` during runtime
         :param kwargs: additional extra keyword arguments to avoid failing when extra params ara passed that are not expected
         """
-        self._thread_pool = ThreadPoolExecutor(max_workers=1)
         self._add_metas(metas)
         self._add_requests(requests)
         self._add_runtime_args(runtime_args)
+        self._init_monitoring()
 
     def _add_runtime_args(self, _runtime_args: Optional[Dict]):
         if _runtime_args:
             self.runtime_args = SimpleNamespace(**_runtime_args)
         else:
             self.runtime_args = SimpleNamespace()
+
+    def _init_monitoring(self):
+        if hasattr(self.runtime_args, 'metrics_registry'):
+            self._summary_method = Summary(
+                'process_request_seconds',
+                'Time spent when calling the executor request method',
+                registry=self.runtime_args.metrics_registry,
+                namespace='jina',
+                labelnames=('method', 'executor'),
+            )
+        else:
+            self._summary_method = None
 
     def _add_requests(self, _requests: Optional[Dict]):
         if not hasattr(self, 'requests'):
@@ -239,7 +245,7 @@ class BaseExecutor(JAMLCompatible, metaclass=ExecutorType):
         if iscoroutinefunction(func):
             return await func(self, **kwargs)
         else:
-            return await run_in_threadpool(func, self._thread_pool, self, **kwargs)
+            return func(self, **kwargs)
 
     @property
     def workspace(self) -> Optional[str]:

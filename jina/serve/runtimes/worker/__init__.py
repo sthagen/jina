@@ -47,6 +47,7 @@ class WorkerRuntime(AsyncNewLoopRuntime, ABC):
                 'receiving_request_seconds',
                 'Time spent processing request',
                 registry=self.metrics_registry,
+                namespace='jina',
             ).time()
         else:
             self._summary_time = contextlib.nullcontext()
@@ -59,7 +60,9 @@ class WorkerRuntime(AsyncNewLoopRuntime, ABC):
         # Keep this initialization order
         # otherwise readiness check is not valid
         # The DataRequestHandler needs to be started BEFORE the grpc server
-        self._data_request_handler = DataRequestHandler(self.args, self.logger)
+        self._data_request_handler = DataRequestHandler(
+            self.args, self.logger, self.metrics_registry
+        )
 
         self._grpc_server = grpc.aio.server(
             options=[
