@@ -9,6 +9,7 @@ from typing import List, Optional, Union
 import grpc
 from grpc_reflection.v1alpha import reflection
 
+from jina.importer import ImportExtensions
 from jina.proto import jina_pb2, jina_pb2_grpc
 from jina.serve.runtimes.asyncio import AsyncNewLoopRuntime
 from jina.serve.runtimes.request_handlers.data_request_handler import DataRequestHandler
@@ -22,17 +23,13 @@ class WorkerRuntime(AsyncNewLoopRuntime, ABC):
     def __init__(
         self,
         args: argparse.Namespace,
-        cancel_event: Optional[
-            Union['asyncio.Event', 'multiprocessing.Event', 'threading.Event']
-        ] = None,
         **kwargs,
     ):
         """Initialize grpc and data request handling.
         :param args: args from CLI
-        :param cancel_event: the cancel event used to wait for canceling
         :param kwargs: keyword args
         """
-        super().__init__(args, cancel_event, **kwargs)
+        super().__init__(args, **kwargs)
 
     async def async_setup(self):
         """
@@ -41,7 +38,11 @@ class WorkerRuntime(AsyncNewLoopRuntime, ABC):
         await self._async_setup_grpc_server()
 
         if self.metrics_registry:
-            from prometheus_client import Summary
+            with ImportExtensions(
+                required=True,
+                help_text='You need to install the `prometheus_client` to use the montitoring functionality of jina',
+            ):
+                from prometheus_client import Summary
 
             self._summary_time = Summary(
                 'receiving_request_seconds',
