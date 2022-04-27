@@ -56,7 +56,8 @@ def _get_run_args(print_args: bool = True):
 
                 param_str.add_row(sign, param, value, style=style)
 
-            print(f'\n{logo_str}\n')
+            if 'JINA_LOG_NO_COLOR' not in os.environ:
+                print(f'\n{logo_str}\n')
             console.print(f'▶️  {" ".join(sys.argv)}', param_str)
         return args
     else:
@@ -158,9 +159,9 @@ def _try_plugin_command():
     subcommand = argv[1]
     cmd = 'jina-' + subcommand
     if _cmd_exists(cmd):
-        import threading
+        import multiprocessing
 
-        threading.Thread(
+        multiprocessing.Process(
             target=_is_latest_version_plugin,
             daemon=True,
             args=(subcommand,),

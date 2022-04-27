@@ -161,6 +161,11 @@
 
 
 
+
+
+
+
+
 # Change Logs
 
 Jina is released on every Friday evening. The PyPi package and Docker Image will be updated, the changes of the release will be tracked by this file.
@@ -450,6 +455,11 @@ Jina is released on every Friday evening. The PyPi package and Docker Image will
 - [Release Note (`3.3.4`)](#release-note-334)
 - [Release Note (`3.3.5`)](#release-note-335)
 - [Release Note (`3.3.6`)](#release-note-336)
+- [Release Note (`3.3.7`)](#release-note-337)
+- [Release Note (`3.3.8`)](#release-note-338)
+- [Release Note (`3.3.9`)](#release-note-339)
+- [Release Note (`3.3.10`)](#release-note-3310)
+- [Release Note (`3.3.11`)](#release-note-3311)
 
 <!-- END doctoc generated TOC please keep comment here to allow auto update -->
 
@@ -13081,4 +13091,121 @@ Jina is released on every Friday evening. The PyPi package and Docker Image will
 
  - [[```0c8d6371```](https://github.com/jina-ai/jina/commit/0c8d6371cc64e51f5bf1a2af66120b8d99bfca26)] __-__ __docs__: update TOC (*Jina Dev Bot*)
  - [[```d1add5a6```](https://github.com/jina-ai/jina/commit/d1add5a624e1cc474a77d4ae70cf1c82c68e5005)] __-__ __version__: the next version will be 3.3.6 (*Jina Dev Bot*)
+
+<a name=release-note-3-3-7></a>
+## Release Note (`3.3.7`)
+
+> Release time: 2022-04-25 14:16:33
+
+
+
+🙇 We'd like to thank all contributors for this new release! In particular,
+ samsja,  Tobias Jacobowitz,  Johannes Messner,  joschkabraun,  Joan Fontanals,  Jina Dev Bot,  cristian,  felix-wang,  🙇
+
+
+### 🆕 New Features
+
+ - [[```6ac879e4```](https://github.com/jina-ai/jina/commit/6ac879e4e59fffa014111abd815971dde63f900c)] __-__ add linkerd details in contributing (#4686) (*samsja*)
+ - [[```59b76269```](https://github.com/jina-ai/jina/commit/59b7626903b5e9a303eba0817191c8d6ec5b6e77)] __-__ add timeout_send (#4660) (*Tobias Jacobowitz*)
+ - [[```4c4fc9e2```](https://github.com/jina-ai/jina/commit/4c4fc9e2c1fa23a9bc39ab79906e7cb40dffc9d8)] __-__ __monitoring__: count the number of processed documents (#4672) (*samsja*)
+ - [[```b3b139be```](https://github.com/jina-ai/jina/commit/b3b139beb3df8a50ebaae1b6eee25eb9b0407d30)] __-__ pass environment to head and gateway (#4646) (*Joan Fontanals*)
+
+### 🐞 Bug fixes
+
+ - [[```9b8deaa2```](https://github.com/jina-ai/jina/commit/9b8deaa2a098be35bebaaa9bb523aed51c64bc4d)] __-__ __dependency__: prometheus client should be a core dependency (#4689) (*samsja*)
+ - [[```96a83469```](https://github.com/jina-ai/jina/commit/96a8346973ac732d5e74cf5b3ec894a0c5944d43)] __-__ better error messages when flow fails to start (#4652) (*Johannes Messner*)
+ - [[```4168d44d```](https://github.com/jina-ai/jina/commit/4168d44dfaba0fa43709eea2a3ef859f686ddeb6)] __-__ set the multiprocessing start_method spawn (#4650) (*felix-wang*)
+
+### 📗 Documentation
+
+ - [[```85b597ab```](https://github.com/jina-ai/jina/commit/85b597ab1f92c2f5596edb779d8d79196f3aa3fc)] __-__ fixed typos in limiting outstanding requests (#4611) (*joschkabraun*)
+ - [[```b6aaa3ef```](https://github.com/jina-ai/jina/commit/b6aaa3ef074713c0f74402627a121f090e28d938)] __-__ add docs guide (#4659) (*cristian*)
+ - [[```0c1468a7```](https://github.com/jina-ai/jina/commit/0c1468a7d08795b358dada91e5a81986fb16d23e)] __-__ normalize usage of admonition boxes (#4662) (*Johannes Messner*)
+
+### 🍹 Other Improvements
+
+ - [[```b086f0d9```](https://github.com/jina-ai/jina/commit/b086f0d9016cef3c925a832c33c44e779351d879)] __-__ __docs__: update TOC (*Jina Dev Bot*)
+ - [[```e7bd24ab```](https://github.com/jina-ai/jina/commit/e7bd24abce90cf1ea3973f542b25b4c632cbc2fc)] __-__ __version__: the next version will be 3.3.7 (*Jina Dev Bot*)
+
+<a name=release-note-3-3-8></a>
+## Release Note (`3.3.8`)
+
+> Release time: 2022-04-25 17:42:17
+
+
+
+🙇 We'd like to thank all contributors for this new release! In particular,
+ Joan Fontanals,  Jina Dev Bot,  🙇
+
+
+### 🐞 Bug fixes
+
+ - [[```81a0b8d5```](https://github.com/jina-ai/jina/commit/81a0b8d59abddeabf352379bef653445d7f320de)] __-__ fix configuration of addresses in docker compose (#4684) (*Joan Fontanals*)
+
+### 🍹 Other Improvements
+
+ - [[```e9a4d79c```](https://github.com/jina-ai/jina/commit/e9a4d79c5f4bd95a582cdb1a41e47fb4689cf836)] __-__ __version__: the next version will be 3.3.8 (*Jina Dev Bot*)
+
+<a name=release-note-3-3-9></a>
+## Release Note (`3.3.9`)
+
+> Release time: 2022-04-25 19:59:19
+
+
+
+🙇 We'd like to thank all contributors for this new release! In particular,
+ Joan Fontanals,  Jina Dev Bot,  🙇
+
+
+### 🐞 Bug fixes
+
+ - [[```162a59b6```](https://github.com/jina-ai/jina/commit/162a59b6057b5ff91c3f0ca871ed87575a3f76ee)] __-__ fix target executor in http (#4690) (*Joan Fontanals*)
+
+### 🍹 Other Improvements
+
+ - [[```278a6992```](https://github.com/jina-ai/jina/commit/278a6992379764f273c614dc5b37bde3857f3075)] __-__ __version__: the next version will be 3.3.9 (*Jina Dev Bot*)
+
+<a name=release-note-3-3-10></a>
+## Release Note (`3.3.10`)
+
+> Release time: 2022-04-25 21:00:48
+
+
+
+🙇 We'd like to thank all contributors for this new release! In particular,
+ Joan Fontanals,  Jina Dev Bot,  🙇
+
+
+### 🐞 Bug fixes
+
+ - [[```5af4efe3```](https://github.com/jina-ai/jina/commit/5af4efe38b64248629f531b7837aa3cbad64d7a7)] __-__ fix deadlock on import (#4693) (*Joan Fontanals*)
+
+### 🍹 Other Improvements
+
+ - [[```a8329d66```](https://github.com/jina-ai/jina/commit/a8329d66a7aabf67efc7e488b6c94e3317d488e2)] __-__ __version__: the next version will be 3.3.10 (*Jina Dev Bot*)
+
+<a name=release-note-3-3-11></a>
+## Release Note (`3.3.11`)
+
+> Release time: 2022-04-26 14:47:52
+
+
+
+🙇 We'd like to thank all contributors for this new release! In particular,
+ Deepankar Mahapatro,  Tobias Jacobowitz,  Jina Dev Bot,  Joan Fontanals,  🙇
+
+
+### 🆕 New Features
+
+ - [[```25b8df17```](https://github.com/jina-ai/jina/commit/25b8df17389ac3674cfc10767d5e348974422ec1)] __-__ graceful shutdown (#4682) (*Tobias Jacobowitz*)
+
+### 🐞 Bug fixes
+
+ - [[```e23ff11a```](https://github.com/jina-ai/jina/commit/e23ff11a2f5826af4a4bb5ff40af4bebd3acf3a1)] __-__ pod does not start runtime process as daemon (#4692) (*Joan Fontanals*)
+
+### 🍹 Other Improvements
+
+ - [[```05222069```](https://github.com/jina-ai/jina/commit/0522206909c3b743684c1aecf490e47564b860d9)] __-__ disable console color with envvar (#4697) (*Deepankar Mahapatro*)
+ - [[```655213d0```](https://github.com/jina-ai/jina/commit/655213d07258490d4a12b29adcfb5dab0e21fe3d)] __-__ __docs__: update TOC (*Jina Dev Bot*)
+ - [[```d9b5b718```](https://github.com/jina-ai/jina/commit/d9b5b7187d0e1e912cae69b1862aa7759b7c4ab5)] __-__ __version__: the next version will be 3.3.11 (*Jina Dev Bot*)
 
