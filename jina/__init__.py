@@ -64,7 +64,7 @@ elif _sys.version_info >= (3, 8, 0) and _platform.system() == 'Darwin':
 # this is managed by git tag and updated on every release
 # NOTE: this represents the NEXT release version
 
-__version__ = '3.3.20'
+__version__ = '3.3.22'
 
 # do not change this line manually
 # this is managed by proto/build-proto.sh and updated on every execution
@@ -127,11 +127,6 @@ __root_dir__ = _os.path.dirname(_os.path.abspath(__file__))
 __resources_path__ = _os.path.join(
     _os.path.dirname(_sys.modules['jina'].__file__), 'resources'
 )
-
-if 'JINA_CHECK_VERSION' in _os.environ:
-    _warnings.warn(
-        f'Your version of jina is {__version__}. You may want to check if there are newer versions released in https://pypi.org/project/jina/#history'
-    )
 
 _names_with_underscore = [
     '__version__',

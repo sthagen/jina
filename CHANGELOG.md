@@ -174,6 +174,8 @@
 
 
 
+
+
 # Change Logs
 
 Jina is released on every Friday evening. The PyPi package and Docker Image will be updated, the changes of the release will be tracked by this file.
@@ -13389,4 +13391,46 @@ Jina is released on every Friday evening. The PyPi package and Docker Image will
 ### 🍹 Other Improvements
 
  - [[```a884f616```](https://github.com/jina-ai/jina/commit/a884f616bfc79a40b87a5b80fbd66c4d148a88a8)] __-__ __version__: the next version will be 3.3.19 (*Jina Dev Bot*)
+
+<a name=release-note-3-3-20></a>
+## Release Note (`3.3.20`)
+
+> Release time: 2022-04-29 13:48:42
+
+
+
+🙇 We'd like to thank all contributors for this new release! In particular,
+ Joan Fontanals,  samsja,  Jina Dev Bot,  🙇
+
+
+### 🆕 New Features
+
+ - [[```55d1f44e```](https://github.com/jina-ai/jina/commit/55d1f44ef160654daeb1efc3814e851b6d410caf)] __-__ allow jina now to unset jina_check_version (#4722) (*Joan Fontanals*)
+ - [[```615e3efe```](https://github.com/jina-ai/jina/commit/615e3efe52fa87ebebae30431089d1c44047f766)] __-__ monitoring support for k8s (#4687) (*samsja*)
+
+### 🐞 Bug fixes
+
+ - [[```976792e9```](https://github.com/jina-ai/jina/commit/976792e9c08e1902bd9265c73d872cd3a024554c)] __-__ edit conda recipe generator (#4723) (*Joan Fontanals*)
+
+### 🍹 Other Improvements
+
+ - [[```f5dacb1c```](https://github.com/jina-ai/jina/commit/f5dacb1cd5a31d5a09f53e14318a7eab55c0540b)] __-__ update announcement in readme and docs (*Jina Dev Bot*)
+ - [[```16b6f154```](https://github.com/jina-ai/jina/commit/16b6f154e8b4873babf32fc2121f61bec1104434)] __-__ __docs__: update TOC (*Jina Dev Bot*)
+ - [[```2ff693f3```](https://github.com/jina-ai/jina/commit/2ff693f3964ebcb400379e4bcaae9a981a1f7304)] __-__ __version__: the next version will be 3.3.20 (*Jina Dev Bot*)
+
+<a name=release-note-3-3-21></a>
+## Release Note (`3.3.21`)
+
+> Release time: 2022-04-29 19:17:10
+
+
+
+🙇 We'd like to thank all contributors for this new release! In particular,
+ Han Xiao,  Jina Dev Bot,  🙇
+
+
+### 🍹 Other Improvements
+
+ - [[```2b2b2e61```](https://github.com/jina-ai/jina/commit/2b2b2e612be7cea7c959992f9be3d3a4cfccf043)] __-__ remove redundant code (*Han Xiao*)
+ - [[```5ad319ef```](https://github.com/jina-ai/jina/commit/5ad319efc1b688346bc39a22511a81fd8804bbec)] __-__ __version__: the next version will be 3.3.21 (*Jina Dev Bot*)
 
