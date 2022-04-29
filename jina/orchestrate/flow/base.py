@@ -4,12 +4,10 @@ import copy
 import json
 import multiprocessing
 import os
-import re
 import sys
 import threading
 import time
 import uuid
-import warnings
 from collections import OrderedDict
 from contextlib import ExitStack
 from typing import (
@@ -25,6 +23,7 @@ from typing import (
 )
 
 from rich import print
+from rich.panel import Panel
 from rich.table import Table
 
 from jina import __default_host__, __default_port_monitoring__, __docker_host__, helper
@@ -43,11 +42,9 @@ from jina.excepts import (
     RuntimeFailToStart,
 )
 from jina.helper import (
-    GRAPHQL_MIN_DOCARRAY_VERSION,
     ArgNamespace,
     CatchAllCleanupContextManager,
     colored_rich,
-    docarray_graphql_compatible,
     download_mermaid_url,
     get_internal_ip,
     get_public_ip,
@@ -199,13 +196,13 @@ class Flow(PostMixin, JAMLCompatible, ExitStack, metaclass=FlowType):
         :param monitoring: If set, spawn an http server with a prometheus endpoint to expose metrics
         :param name: The name of this object.
 
-          This will be used in the following places:
-          - how you refer to this object in Python/YAML/CLI
-          - visualization
-          - log message header
-          - ...
+              This will be used in the following places:
+              - how you refer to this object in Python/YAML/CLI
+              - visualization
+              - log message header
+              - ...
 
-          When not given, then the default naming strategy will apply.
+              When not given, then the default naming strategy will apply.
         :param native: If set, only native Executors is allowed, and the Executor is always run inside WorkerRuntime.
         :param no_crud_endpoints: If set, /index, /search, /update, /delete endpoints are removed from HTTP interface.
 
@@ -278,14 +275,11 @@ class Flow(PostMixin, JAMLCompatible, ExitStack, metaclass=FlowType):
         self,
         *,
         env: Optional[dict] = None,
-        expose_graphql_endpoint: Optional[bool] = False,
         inspect: Optional[str] = 'COLLECT',
         log_config: Optional[str] = None,
         name: Optional[str] = None,
-        polling: Optional[str] = 'ANY',
         quiet: Optional[bool] = False,
         quiet_error: Optional[bool] = False,
-        timeout_ctrl: Optional[int] = 60,
         uses: Optional[str] = None,
         workspace: Optional[str] = None,
         **kwargs,
@@ -293,31 +287,21 @@ class Flow(PostMixin, JAMLCompatible, ExitStack, metaclass=FlowType):
         """Create a Flow. Flow is how Jina streamlines and scales Executors. This overloaded method provides arguments from `jina flow` CLI.
 
         :param env: The map of environment variables that are available inside runtime
-        :param expose_graphql_endpoint: If set, /graphql endpoint is added to HTTP interface.
         :param inspect: The strategy on those inspect deployments in the flow.
 
               If `REMOVE` is given then all inspect deployments are removed when building the flow.
         :param log_config: The YAML config of the logger used in this object.
         :param name: The name of this object.
 
-          This will be used in the following places:
-          - how you refer to this object in Python/YAML/CLI
-          - visualization
-          - log message header
-          - ...
+              This will be used in the following places:
+              - how you refer to this object in Python/YAML/CLI
+              - visualization
+              - log message header
+              - ...
 
-          When not given, then the default naming strategy will apply.
-        :param polling: The polling strategy of the Deployment and its endpoints (when `shards>1`).
-              Can be defined for all endpoints of a Deployment or by endpoint.
-              Define per Deployment:
-              - ANY: only one (whoever is idle) Pod polls the message
-              - ALL: all Pods poll the message (like a broadcast)
-              Define per Endpoint:
-              JSON dict, {endpoint: PollingType}
-              {'/custom': 'ALL', '/search': 'ANY', '*': 'ANY'}
+              When not given, then the default naming strategy will apply.
         :param quiet: If set, then no log will be emitted from this object.
         :param quiet_error: If set, then exception stack information will not be added to the log
-        :param timeout_ctrl: The timeout in milliseconds of the control request, -1 for waiting forever
         :param uses: The YAML file represents a flow
         :param workspace: The working directory for any IO operations in this object. If not set, then derive from its parent `workspace`.
 
@@ -342,17 +326,6 @@ class Flow(PostMixin, JAMLCompatible, ExitStack, metaclass=FlowType):
             GATEWAY_NAME
         ]  #: default first deployment is gateway, will add when build()
         self._update_args(args, **kwargs)
-        if (
-            self.protocol == GatewayProtocolType.HTTP
-            and self.args.expose_graphql_endpoint
-            and not docarray_graphql_compatible()
-        ):
-            self.args.expose_graphql_endpoint = False
-            warnings.warn(
-                'DocArray version is incompatible with GraphQL features. '
-                'Automatically setting expose_graphql_endpoint=False. '
-                f'To use GraphQL features, install docarray>={GRAPHQL_MIN_DOCARRAY_VERSION}'
-            )
 
         if isinstance(self.args, argparse.Namespace):
             self.logger = JinaLogger(
@@ -476,9 +449,6 @@ class Flow(PostMixin, JAMLCompatible, ExitStack, metaclass=FlowType):
             kwargs.get('port', None) is None and kwargs.get('port_expose', None) is None
         )
         args.noblock_on_start = True
-        args.expose_graphql_endpoint = (
-            self.args.expose_graphql_endpoint
-        )  # also used in Flow, thus not in kwargs
         args.graph_description = json.dumps(graph_description)
         args.graph_conditions = json.dumps(graph_conditions)
         args.deployments_addresses = json.dumps(deployments_addresses)
@@ -673,7 +643,6 @@ class Flow(PostMixin, JAMLCompatible, ExitStack, metaclass=FlowType):
         polling: Optional[str] = 'ANY',
         port: Optional[int] = None,
         port_monitoring: Optional[int] = 9090,
-        pull_latest: Optional[bool] = False,
         py_modules: Optional[List[str]] = None,
         quiet: Optional[bool] = False,
         quiet_error: Optional[bool] = False,
@@ -727,13 +696,13 @@ class Flow(PostMixin, JAMLCompatible, ExitStack, metaclass=FlowType):
         :param monitoring: If set, spawn an http server with a prometheus endpoint to expose metrics
         :param name: The name of this object.
 
-          This will be used in the following places:
-          - how you refer to this object in Python/YAML/CLI
-          - visualization
-          - log message header
-          - ...
+              This will be used in the following places:
+              - how you refer to this object in Python/YAML/CLI
+              - visualization
+              - log message header
+              - ...
 
-          When not given, then the default naming strategy will apply.
+              When not given, then the default naming strategy will apply.
         :param native: If set, only native Executors is allowed, and the Executor is always run inside WorkerRuntime.
         :param output_array_type: The type of array `tensor` and `embedding` will be serialized to.
 
@@ -750,7 +719,6 @@ class Flow(PostMixin, JAMLCompatible, ExitStack, metaclass=FlowType):
               {'/custom': 'ALL', '/search': 'ANY', '*': 'ANY'}
         :param port: The port for input data to bind to, default is a random port between [49152, 65535]
         :param port_monitoring: The port on which the prometheus server is exposed, default port is 9090
-        :param pull_latest: Pull the latest image before running
         :param py_modules: The customized python modules need to be imported before loading the executor
 
           Note that the recommended way is to only import a single module - a simple python file, if your
@@ -884,7 +852,6 @@ class Flow(PostMixin, JAMLCompatible, ExitStack, metaclass=FlowType):
             args.workspace = self.workspace
 
         args.noblock_on_start = True
-        args.extra_search_paths = self.args.extra_search_paths
 
         port = kwargs.get('port', None)
         if not port:
@@ -1145,7 +1112,7 @@ class Flow(PostMixin, JAMLCompatible, ExitStack, metaclass=FlowType):
 
         self._build_level = FlowBuildLevel.EMPTY
 
-        self.logger.debug('Flow is closed!')
+        self.logger.debug('flow is closed!')
         self.logger.close()
 
     def start(self):
@@ -1265,7 +1232,11 @@ class Flow(PostMixin, JAMLCompatible, ExitStack, metaclass=FlowType):
 
         if addr_table:
             print(
-                addr_table
+                Panel(
+                    addr_table,
+                    title=':tada: [b]Flow is ready to serve![/]',
+                    expand=False,
+                )
             )  # can't use logger here see : https://github.com/Textualize/rich/discussions/2024
         self.logger.debug(
             f'{self.num_deployments} Deployments (i.e. {self.num_pods} Pods) are running in this Flow'
@@ -1465,7 +1436,7 @@ class Flow(PostMixin, JAMLCompatible, ExitStack, metaclass=FlowType):
         if output:
             download_mermaid_url(url, output)
         elif not showed:
-            op_flow.logger.info(f'flow visualization: {url}')
+            print(f'[link={url}]Click here to see the visualization in browser[/]')
 
         return self
 
@@ -1594,48 +1565,48 @@ class Flow(PostMixin, JAMLCompatible, ExitStack, metaclass=FlowType):
         return table
 
     def _get_address_table(self, address_table):
-        address_table.add_row('🔗', 'Protocol', f'{self.protocol}')
+        address_table.add_row(':link:', 'Protocol', f'{self.protocol}')
         address_table.add_row(
-            '🏠',
+            ':house:',
             'Local access',
-            f'[underline]{self.host}:{self.port}[/underline]',
+            f'[link={self.protocol}://{self.host}:{self.port}]{self.host}:{self.port}[/]',
         )
         address_table.add_row(
-            '🔒',
+            ':lock:',
             'Private network',
-            f'[underline]{self.address_private}:{self.port}[/underline]',
+            f'[link={self.protocol}://{self.address_private}:{self.port}]{self.address_private}:{self.port}[/]',
         )
 
         if self.address_public:
             address_table.add_row(
-                '🌐',
+                ':earth_africa:',
                 'Public address',
-                f'[underline]{self.address_public}:{self.port}[/underline]',
+                f'[link={self.protocol}://{self.address_public}:{self.port}]{self.address_public}:{self.port}[/]',
             )
 
         if self.protocol == GatewayProtocolType.HTTP:
             address_table.add_row(
-                '💬',
+                ':speech_balloon:',
                 'Swagger UI',
-                f'[underline]http://localhost:{self.port}/docs[/underline]',
+                f'[link=http://localhost:{self.port}/docs]http://localhost:{self.port}/docs[/]',
             )
 
             address_table.add_row(
-                '📚',
+                ':books:',
                 'Redoc',
-                f'[underline]http://localhost:{self.port}/redoc[/underline]',
+                f'[link=http://localhost:{self.port}/redoc]http://localhost:{self.port}/redoc[/]',
             )
-            if self.args.expose_graphql_endpoint:
+            if self.gateway_args.expose_graphql_endpoint:
                 address_table.add_row(
-                    '💬',
+                    ':strawberry:',
                     'GraphQL UI',
-                    f'[underline][cyan]http://localhost:{self.port}/graphql[/underline][/cyan]',
+                    f'[link=http://localhost:{self.port}/graphql]http://localhost:{self.port}/graphql[/]',
                 )
         if self.monitoring:
             address_table.add_row(
-                '📉️',
+                ':bar_chart:',
                 'Prometheus',
-                f'[underline][cyan]http://localhost:{self.port_monitoring}[/underline][/cyan]',
+                f'[link=http://localhost:{self.port_monitoring}]http://localhost:{self.port_monitoring}[/]',
             )
 
         return address_table
@@ -1891,8 +1862,8 @@ class Flow(PostMixin, JAMLCompatible, ExitStack, metaclass=FlowType):
                         if i < len(k8s_objects) - 1:
                             fp.write('---\n')
 
-        self.logger.info(
-            f'K8s yaml files have been created under {output_base_path}. You can use it by running `kubectl apply -R -f {output_base_path}`'
+        print(
+            f'K8s yaml files have been created under [b]{output_base_path}[/]. You can use it by running [b]kubectl apply -R -f {output_base_path}[/]'
         )
 
     def to_docker_compose_yaml(
@@ -1949,8 +1920,8 @@ class Flow(PostMixin, JAMLCompatible, ExitStack, metaclass=FlowType):
             else f'docker-compose -f {output_path} up'
         )
 
-        self.logger.info(
-            f'Docker compose file has been created under {output_path}. You can use it by running `{command}`'
+        print(
+            f'Docker compose file has been created under [b]{output_path}[/b]. You can use it by running [b]{command}[/b]'
         )
 
     @property

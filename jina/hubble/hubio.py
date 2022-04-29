@@ -333,8 +333,11 @@ metas:
         work_path = Path(self.args.path)
 
         exec_tags = None
+        exec_immutable_tags = None
         if self.args.tag:
             exec_tags = ','.join(self.args.tag)
+        if self.args.protected_tag:
+            exec_immutable_tags = ','.join(self.args.protected_tag)
 
         dockerfile = None
         if self.args.dockerfile:
@@ -376,6 +379,9 @@ metas:
 
                 if exec_tags:
                     form_data['tags'] = exec_tags
+
+                if exec_immutable_tags:
+                    form_data['immutableTags'] = exec_immutable_tags
 
                 if dockerfile:
                     form_data['dockerfile'] = str(dockerfile)
@@ -735,7 +741,6 @@ f = Flow().add(uses='jinahub+sandbox://{executor_name}')
 
     def _load_docker_client(self):
         with ImportExtensions(required=True):
-            import docker
             import docker.errors
             from docker import APIClient
 

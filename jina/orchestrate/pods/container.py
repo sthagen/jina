@@ -1,13 +1,16 @@
 import argparse
 import asyncio
+import copy
 import multiprocessing
 import os
+import re
 import signal
 import threading
 import time
 from typing import TYPE_CHECKING, Dict, Optional, Union
 
 from jina import __docker_host__, __windows__
+from jina.excepts import BadImageNameError, DockerVersionError
 from jina.helper import random_name, slugify
 from jina.importer import ImportExtensions
 from jina.logging.logger import JinaLogger
@@ -36,8 +39,6 @@ def _docker_run(
     import warnings
 
     import docker
-
-    from jina.excepts import BadImageNameError, DockerVersionError
 
     docker_version = client.version().get('Version')
     if not docker_version:
@@ -90,19 +91,6 @@ def _docker_run(
     except docker.errors.ImageNotFound:
         logger.error(f'can not find local image: {uses_img}')
         img_not_found = True
-
-    if args.pull_latest or img_not_found:
-        logger.warning(
-            f'pulling {uses_img}, this could take a while. if you encounter '
-            f'timeout error due to pulling takes to long, then please set '
-            f'"timeout-ready" to a larger value.'
-        )
-        try:
-            client.images.pull(uses_img)
-            img_not_found = False
-        except docker.errors.NotFound:
-            img_not_found = True
-            logger.error(f'can not find remote image: {uses_img}')
 
     if img_not_found:
         raise BadImageNameError(f'image: {uses_img} can not be found local & remote.')
@@ -195,7 +183,9 @@ def run(
     """
     import docker
 
-    logger = JinaLogger(name, **vars(args))
+    log_kwargs = copy.deepcopy(vars(args))
+    log_kwargs['log_config'] = 'docker'
+    logger = JinaLogger(name, **log_kwargs)
 
     cancel = threading.Event()
     fail_to_start = threading.Event()
@@ -266,7 +256,8 @@ def run(
                     and not cancel.is_set()
                 ):
                     await asyncio.sleep(0.01)
-                logger.info(line.strip().decode())
+                msg = line.decode().rstrip()  # type: str
+                logger.debug(re.sub(r'\u001b\[.*?[@-~]', '', msg))
 
         async def _run_async(container):
             await asyncio.gather(
@@ -281,7 +272,7 @@ def run(
                 f' Process terminated, the container fails to start, check the arguments or entrypoint'
             )
         is_shutdown.set()
-        logger.debug(f' Process terminated')
+        logger.debug(f'process terminated')
 
 
 class ContainerPod(BasePod):
@@ -407,7 +398,7 @@ class ContainerPod(BasePod):
             self.is_shutdown.wait(self.args.timeout_ctrl)
             self.logger.debug(f'terminating the runtime process')
             self.worker.terminate()
-            self.logger.debug(f' runtime process properly terminated')
+            self.logger.debug(f'runtime process properly terminated')
 
     def join(self, *args, **kwargs):
         """Joins the Pod.
@@ -428,6 +419,6 @@ class ContainerPod(BasePod):
                 containers = client.containers.list()
         except docker.errors.NotFound:
             pass
-        self.logger.debug(f' Joining the process')
+        self.logger.debug(f'joining the process')
         self.worker.join(*args, **kwargs)
-        self.logger.debug(f' Successfully joined the process')
+        self.logger.debug(f'successfully joined the process')

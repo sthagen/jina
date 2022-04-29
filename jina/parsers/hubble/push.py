@@ -50,6 +50,12 @@ One can later fetch a tagged Executor via `jinahub[+docker]://MyExecutor/gpu`
     )
 
     gp.add_argument(
+        '--protected-tag',
+        action='append',
+        help='A list of protected tags. Like tag but protected against updates after first push.',
+    )
+
+    gp.add_argument(
         '--force-update',
         '--force',
         type=str,
