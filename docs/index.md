@@ -7,35 +7,23 @@
 
 ## Install
 
-1. Make sure that you have Python 3.7+ installed on Linux/MacOS/{ref}`Windows <jina-on-windows>`.
+Make sure that you have Python 3.7+ installed on Linux/MacOS/{ref}`Windows <jina-on-windows>`.
 
-    ````{tab} via PyPI
-    ```shell
-    pip install -U jina
-    ```
-    ````
-    ````{tab} via Conda
-    ```shell
-    conda install jina -c conda-forge
-    ```
-    ````
-    ````{tab} via Docker
-    ```shell
-    docker pull jinaai/jina:latest
-    ```
-    ````
-
-2. That’s it!
-   ````{tab} Run natively
-   ```shell
-   jina -v
-   ```
-   ````
-   ````{tab} Run in Docker
-   ```shell
-   docker run jinaai/jina:latest -v
-   ```
-   ````
+````{tab} via PyPI
+```shell
+pip install -U jina
+```
+````
+````{tab} via Conda
+```shell
+conda install jina -c conda-forge
+```
+````
+````{tab} via Docker
+```shell
+docker pull jinaai/jina:latest
+```
+````
 
 Now that you’re set up, let’s dive into more of how Jina works and how to build great apps.
 
@@ -46,42 +34,45 @@ Now that you’re set up, let’s dive into more of how Jina works and how to bu
 ```
 
 ```{toctree}
-:caption: Get started
+:caption: Get Started
 :hidden:
 
-get-started/neural-search
-get-started/what-is-jina
 get-started/install/index
 get-started/create-app
+fundamentals/architecture-overview
 ```
 
 ```{toctree}
 :caption: User Guides
 :hidden:
 
-fundamentals/architecture-overview
+
 fundamentals/executor/index
 fundamentals/flow/index
-fundamentals/clean-code
+fundamentals/gateway/index
+fundamentals/flow/client
+fundamentals/executor/hub/index
+how-to/index
 ```
 
+
+
 ```{toctree}
-:caption: How-to
+:caption: Developer References
 :hidden:
-how-to/deploy
-how-to/executor
+:maxdepth: 1
+
+api
+cli/index
+proto/docs
 ```
 
-
 ```{toctree}
-:caption: Developer Reference
+:caption: Legacy Support
 :hidden:
 :maxdepth: 1
 
 get-started/migrate
-api
-cli/index
-proto/docs
 Jina 2 Documentation <https://docs2.jina.ai/>
 ```
 
