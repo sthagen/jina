@@ -46,7 +46,6 @@ fundamentals/architecture-overview
 :caption: User Guides
 :hidden:
 
-
 fundamentals/executor/index
 fundamentals/flow/index
 fundamentals/gateway/index
