@@ -51,6 +51,7 @@ fundamentals/flow/index
 fundamentals/gateway/index
 fundamentals/flow/client
 fundamentals/executor/hub/index
+fundamentals/jcloud/index
 how-to/index
 ```
 
@@ -64,6 +65,7 @@ how-to/index
 api
 cli/index
 proto/docs
+envs/index
 ```
 
 ```{toctree}
