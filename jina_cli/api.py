@@ -210,3 +210,23 @@ def help(args: 'Namespace'):
     from jina_cli.lookup import lookup_and_print
 
     lookup_and_print(args.query.lower())
+
+
+def auth(args: 'Namespace'):
+    """
+    Authenticate a user
+    :param args: arguments coming from the CLI.
+    """
+    from hubble import api
+
+    getattr(api, args.auth_cli.replace('-', '_'))(args)
+
+
+def cloud(args: 'Namespace'):
+    """
+    Use jcloud (Jina Cloud) commands
+    :param args: arguments coming from the CLI.
+    """
+    from jcloud import api
+
+    getattr(api, args.jc_cli.replace('-', '_'))(args)
