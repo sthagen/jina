@@ -39,7 +39,6 @@ exclude_patterns = [
     'tests',
     'page_templates',
     '.github',
-    'api'
 ]
 pygments_style = 'rainbow_dash'
 html_theme = 'furo'
@@ -69,10 +68,6 @@ html_theme_options = {
 
     # start-announce
 
-    "announcement": '''
-    <a href="https://www.meetup.com/jina-community-meetup/events/287738538/?isFirstPublish=true">Join our Office Hours Special Edition on August 25th at 19:00 CET to talk about Career Development at Jina AI</a>
-    ''',
-        
     # end-announce
 }
 
@@ -108,7 +103,6 @@ extensions = [
     'sphinx.ext.coverage',
     'sphinxcontrib.apidoc',
     'sphinxarg.ext',
-    'sphinx_markdown_tables',
     'sphinx_copybutton',
     'sphinx_sitemap',
     'sphinx.ext.intersphinx',
@@ -180,8 +174,8 @@ ogp_custom_meta_tags = [
     '<meta name="twitter:card" content="summary_large_image">',
     '<meta name="twitter:site" content="@JinaAI_">',
     '<meta name="twitter:creator" content="@JinaAI_">',
-    '<meta name="description" content="Build cross-modal and multi-modal applications on the cloud">',
-    '<meta property="og:description" content="Build cross-modal and multi-modal applications on the cloud">',
+    '<meta name="description" content="Build cross-modal and multi-modal applications on the cloud · Neural Search · Creative AI · Cloud Native · MLOps">',
+    '<meta property="og:description" content="Build cross-modal and multi-modal applications on the cloud · Neural Search · Creative AI · Cloud Native · MLOps">',
     '''
     <!-- Global site tag (gtag.js) - Google Analytics -->
 <script async src="https://www.googletagmanager.com/gtag/js?id=G-48ZDWC8GT6"></script>
