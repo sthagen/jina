@@ -1,14 +1,12 @@
 from jina.parsers.client import mixin_comm_protocol_parser
-from jina.parsers.dryrun import set_dryrun_parser
 from jina.parsers.helper import _SHOW_ALL_ARGS
 from jina.parsers.orchestrate.runtimes.head import mixin_head_parser
 
 
-def set_pod_parser(parser=None, port_monitoring=True):
+def set_pod_parser(parser=None):
     """Set the parser for the Pod
 
     :param parser: an optional existing parser to build upon
-    :param port_monitoring: if to include the port parsing
     :return: the parser
     """
     if not parser:
@@ -33,7 +31,7 @@ def set_pod_parser(parser=None, port_monitoring=True):
     mixin_container_runtime_parser(parser)
     mixin_remote_runtime_parser(parser)
     mixin_distributed_feature_parser(parser)
-    mixin_pod_parser(parser, port_monitoring=port_monitoring)
+    mixin_pod_parser(parser)
     mixin_hub_pull_options_parser(parser)
     mixin_head_parser(parser)
 
@@ -51,7 +49,7 @@ def set_deployment_parser(parser=None):
 
         parser = set_base_parser()
 
-    set_pod_parser(parser, port_monitoring=False)
+    set_pod_parser(parser)
 
     from jina.parsers.orchestrate.deployment import mixin_base_deployment_parser
 
@@ -187,17 +185,8 @@ def get_main_parser():
     set_ping_parser(
         sp.add_parser(
             'ping',
-            help='Ping an Executor',
-            description='Ping a Deployment and check its network connectivity.',
-            formatter_class=_chf,
-        )
-    )
-
-    set_dryrun_parser(
-        sp.add_parser(
-            'dryrun',
-            help='Dryrun a Flow',
-            description='send a dryrun request to a Flow to check if it is working',
+            help='Ping an Executor/Flow',
+            description='Ping a remote Executor or a Flow.',
             formatter_class=_chf,
         )
     )
@@ -295,7 +284,7 @@ def get_main_parser():
     set_client_cli_parser(
         sp.add_parser(
             'client',
-            description='Start a Python client that connects to a Jina gateway',
+            description='Start a Python client that connects to a Jina Gateway',
             formatter_class=_chf,
             **(dict(help='Start a Client')) if _SHOW_ALL_ARGS else {},
         )

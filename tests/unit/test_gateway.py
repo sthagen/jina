@@ -29,9 +29,8 @@ def test_gateway_concurrency(protocol, reraise):
                 durations=durations,
                 index=index,
             )
-            results = Client(port=port, protocol=protocol, return_responses=True).index(
-                inputs=(Document() for _ in range(256)),
-                _size=16,
+            results = Client(port=port, protocol=protocol).index(
+                inputs=(Document() for _ in range(256)), _size=16, return_responses=True
             )
             assert len(results) > 0
             for result in results:
@@ -64,3 +63,10 @@ def test_gateway_concurrency(protocol, reraise):
     # requests.
     rate = failed / success
     assert rate < 0.1
+
+
+def test_grpc_custom_otpions():
+
+    f = Flow(grpc_server_options={'grpc.max_send_message_length': -1})
+    with f:
+        pass

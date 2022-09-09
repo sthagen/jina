@@ -19,7 +19,8 @@ jobs:
         env:
           release_token: ${{ secrets.JINA_CORE_RELEASE_TOKEN }}
 
-  hub-integration: 
+  hub-integration:
+    needs: token-check
     uses: jina-ai/hub-integration/.github/workflows/main.yml@main
     with:
       actions: 'all'
@@ -28,7 +29,7 @@ jobs:
       jina_auth_token: ${{ secrets.JINA_AUTH_TOKEN }}
 
   regular-release:
-    needs: [token-check, hub-integration]
+    needs: [token-check]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v2

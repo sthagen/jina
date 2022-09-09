@@ -19,9 +19,7 @@
 
 <!-- start jina-description -->
 
-Jina is a framework that empowers anyone to build cross-modal and multi-modal applications on the cloud. It uplifts a PoC into a production-ready service. Jina handles the infrastructure complexity, making advanced solution engineering and cloud-native technologies accessible to every developer. 
-
-<sub><sup><a id="example-application">[?]</a> Example cross-modal/multimodal applications: <a href="https://github.com/jina-ai/discoart/">DiscoArt</a>, <a href="https://github.com/jina-ai/dalle-flow/">DALL·E Flow</a>, <a href="https://github.com/jina-ai/clip-as-service/">CLIP-as-service</a>, <a href="https://github.com/jina-ai/now/">Jina Now</a>.
+Jina is a MLOps framework that empowers anyone to build cross-modal and multi-modal applications on the cloud. It uplifts a PoC into a production-ready service. Jina handles the infrastructure complexity, making advanced solution engineering and cloud-native technologies accessible to every developer. 
 
 Applications built with Jina enjoy the following features out-of-the-box:
 
@@ -38,11 +36,13 @@ Applications built with Jina enjoy the following features out-of-the-box:
 
 ☁️ **Cloud-native**
   - Seamless Docker container integration: sharing, exploring, sandboxing, versioning and dependency control via [Jina Hub](https://hub.jina.ai).
-  - Fast deployment to Kubernetes, Docker Compose and [Jina Cloud](https://docs.jina.ai/fundamentals/jcloud/).
   - Full observability via Prometheus and Grafana.
+  - Fast deployment to Kubernetes, Docker Compose.
 
 🍱 **Ecosystem**
   - Improved engineering efficiency thanks to the Jina AI ecosystem, so you can focus on innovating with the data applications you build.
+  - Free CPU/GPU hosting via [Jina Cloud](https://docs.jina.ai/fundamentals/jcloud/).
+
 
 <p align="center">
 <a href="#"><img src="https://github.com/jina-ai/jina/blob/master/.github/readme/core-tree-graph.svg?raw=true" alt="Jina in Jina AI neural search ecosystem" width="100%"></a>
@@ -50,7 +50,31 @@ Applications built with Jina enjoy the following features out-of-the-box:
 
 <!-- end jina-description -->
 
+
 ## [Documentation](https://docs.jina.ai)
+
+<table align=center>
+<thead>
+  <tr>
+    <th colspan="4">Understand Jina better</th>
+  </tr>
+</thead>
+<tbody>
+  <tr>
+    <td><a href="https://docs.jina.ai/get-started/what-is-jina/" target="_blank" rel="noopener noreferrer">📗 What is Jina?</a></td>
+    <td><a href="https://docs.jina.ai/get-started/what-is-jina/#relation-to-mlops" target="_blank" rel="noopener noreferrer">🔍 Is Jina MLOps for search?</a></td>
+    <td><a href="https://docs.jina.ai/get-started/comparing-alternatives/" target="_blank" rel="noopener noreferrer">🆚 How Jina compares to alternatives?</a></td>
+    <td><a href="https://docs.jina.ai/get-started/what-is-jina/#why-cloud-native" target="_blank" rel="noopener noreferrer">☁️ What is Cloud-Native?</a></td>
+  </tr>
+  <tr>
+    <td><a href="https://docs.jina.ai/get-started/what-is-cross-modal-multi-modal/" target="_blank" rel="noopener noreferrer">🔮 What is cross-modal and multimodal？</a></td>
+    <td><a href="https://docs.jina.ai/get-started/what-is-cross-modal-multi-modal/#neural-search" target="_blank" rel="noopener noreferrer">🧬 What is neural search?</a></td>
+    <td><a href="https://docs.jina.ai/get-started/what-is-cross-modal-multi-modal/#creative-ai" target="_blank" rel="noopener noreferrer">🎨 What is creative AI?</a></td>
+    <td></td>
+  </tr>
+</tbody>
+</table>
+
 
 ## Install 
 
@@ -58,7 +82,7 @@ Applications built with Jina enjoy the following features out-of-the-box:
 pip install jina
 ```
 
-[More install options can be found in the docs](https://docs.jina.ai/get-started/install/).
+[More install options on Apple Silicon and Windows can be found here](https://docs.jina.ai/get-started/install/).
 
 
 ## Get Started
@@ -73,6 +97,74 @@ Document, Executor and Flow are three fundamental concepts in Jina.
 - [**Flow**](https://docs.jina.ai/fundamentals/flow/) ties Executors together into a pipeline and exposes it with an API gateway.
 
 [The full glossary is explained here.](https://docs.jina.ai/fundamentals/architecture-overview/)
+
+
+---
+
+<p align="center">
+<a href="https://docs.jina.ai"><img src="https://github.com/jina-ai/jina/blob/master/.github/readme/streamline-banner.png?raw=true" alt="Jina: Streamline AI & ML Product Delivery" width="100%"></a>
+</p>
+
+### Streamline AI & ML Product Delivery
+
+A new project starts from local. With Jina, you can easily leverage existing deep learning stacks, improve the quality and quickly build the POC.
+
+```python
+import torch
+from jina import DocumentArray
+
+model = torch.nn.Sequential(
+    torch.nn.Linear(
+        in_features=128,
+        out_features=128,
+    ),
+    torch.nn.ReLU(),
+    torch.nn.Linear(in_features=128, out_features=32),
+)
+
+
+docs = DocumentArray.from_files('left/*.jpg')
+docs.embed(model)
+```
+
+Moving to production, Jina enhances the POC with service endpoint, scalability and adds cloud-native features, making it ready for production without refactoring.
+
+<table>
+<tr>
+<td>
+
+```python
+from jina import DocumentArray, Executor, requests
+from .embedding import model
+
+
+class MyExec(Executor):
+    @requests(on='/embed')
+    async def embed(self, docs: DocumentArray, **kwargs):
+        docs.embed(model)
+```
+
+</td>
+<td>
+    
+```yaml
+jtype: Flow
+with:
+  port: 12345
+executors:
+- uses: MyExec
+  replicas: 2
+```
+</td>
+</tr>
+</table>
+
+
+Finally, the project can be easily deployed to the cloud and serve real traffic.
+
+```bash
+jina cloud deploy ./
+```
 
 ---
 
