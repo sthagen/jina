@@ -342,7 +342,7 @@ def test_k8s_yaml_gateway(deployments_addresses, custom_gateway):
     containers = spec['containers']
     assert len(containers) == 1
     container = containers[0]
-    assert container['name'] == 'executor'
+    assert container['name'] == 'gateway'
     assert (
         container['image'] == custom_gateway
         if custom_gateway
@@ -394,10 +394,11 @@ def test_k8s_yaml_regular_deployment(
 ):
     def _mock_fetch(
         name,
-        tag=None,
-        secret=None,
+        tag,
         image_required=True,
         rebuild_image=True,
+        *,
+        secret=None,
         force=False,
     ):
         return (

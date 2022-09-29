@@ -1568,7 +1568,7 @@ def _parse_kwargs(kwargs: Dict[str, Any]) -> Dict[str, Any]:
             return_scheme['port'],
             return_scheme['protocol'],
             return_scheme['tls'],
-        ) = _parse_host_scheme(kwargs['host'])
+        ) = parse_host_scheme(kwargs['host'])
 
         for key, value in return_scheme.items():
             if value:
@@ -1591,7 +1591,7 @@ def _delete_host_slash(kwargs: Dict[str, Any]) -> Dict[str, Any]:
     return kwargs
 
 
-def _parse_host_scheme(host: str) -> Tuple[str, str, str, bool]:
+def parse_host_scheme(host: str) -> Tuple[str, str, str, bool]:
     scheme, _hostname, port = _parse_url(host)
 
     tls = None
@@ -1654,10 +1654,11 @@ def _parse_ports(port: str) -> Union[int, List]:
     return port
 
 
-def send_telemetry_event(event: str, obj: Any) -> None:
+def send_telemetry_event(event: str, obj: Any, **kwargs) -> None:
     """Sends in a thread a request with telemetry for a given event
     :param event: Event leading to the telemetry entry
     :param obj: Object to be tracked
+    :param kwargs: Extra kwargs to be passed to the data sent
     """
 
     if 'JINA_OPTOUT_TELEMETRY' in os.environ:
@@ -1671,7 +1672,7 @@ def send_telemetry_event(event: str, obj: Any) -> None:
             metas, _ = get_full_version()
             data = base64.urlsafe_b64encode(
                 json.dumps(
-                    {**metas, 'event': f'{obj.__class__.__name__}.{event}'}
+                    {**metas, 'event': f'{obj.__class__.__name__}.{event}', **kwargs}
                 ).encode('utf-8')
             )
 

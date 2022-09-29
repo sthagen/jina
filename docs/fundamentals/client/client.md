@@ -128,7 +128,7 @@ Client(host='my.awesome.flow', port=1234, protocol='grpc', tls=True)
 ````
 
 
-You can also use a mixe of both:
+You can also use a mix of both:
 
 ```python
 from jina import Client
@@ -146,6 +146,15 @@ from jina import Client
 
 Client(host='https://my.awesome.flow:1234', port=4321)
 ```
+````
+
+````{admonition} Caution
+:class: caution
+In case you instanciate a `Client` object using the `grpc` protocol, keep in mind that `grpc` clients cannot be used in 
+a multi-threaded environment (check [this gRPC issue](https://github.com/grpc/grpc/issues/25364) for reference).
+What you should do, is to rely on asynchronous programming or multi-processing rather than multi-threading.
+For instance, if you're building a web server, you can introduce multi-processing based parallelism to your app using 
+`gunicorn`: `gunicorn main:app --workers 4 --worker-class uvicorn.workers.UvicornWorker ...`
 ````
 
 
@@ -470,13 +479,8 @@ For example, a `SIGKILL` from the client OS during the handling of the request, 
 will not trigger the callback.
 
 
-
 Callback functions in Jina expect a `Response` of the type {class}`~jina.types.request.data.DataRequest`, which contains resulting Documents,
 parameters, and other information.
-
-
-
-
 
 ### Handle DataRequest in callbacks
 
@@ -659,7 +663,29 @@ with Flow().add() as f, open('output.txt', 'w') as fp:
     )
 ```
 
+````{admonition} What errors can be handled by the callback?
+:class: caution
+Callbacks can handle errors that are caused by Executors raising an Exception.
 
+A callback will not receive exceptions:
+- from the Gateway having connectivity errors with the Executors.
+- between the Client and the Gateway.
+````
+
+### Continue streaming when an error occurs
+
+`client.post()` accepts a `continue_on_error` parameter. When set to `True`, the Client will keep trying to send the remaining requests. The `continue_on_error` parameter will only apply
+to Exceptions caused by an Executor, but in case of network connectivity issues, an Exception will be raised.
+
+### Transient fault handling with retries
+
+`client.post()` accepts `max_attempts`, `initial_backoff`, `max_backoff` and `backoff_multiplier` parameters to control the capacity to retry requests, when a transient connectivity error occurs, using an exponential backoff strategy.
+This can help to overcome transient network connectivity issues. 
+
+The `max_attempts` parameter determines the number of sending attempts, including the original request.
+The `initial_backoff`, `max_backoff`, and `backoff_multiplier` parameters determine the randomized delay in seconds before retry attempts.
+
+The initial retry attempt will occur at random(0, initial_backoff). In general, the n-th attempt will occur at random(0, min(initial_backoff*backoff_multiplier**(n-1), max_backoff)).
 
 ## Returns
 
