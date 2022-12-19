@@ -65,7 +65,7 @@ elif _sys.version_info >= (3, 8, 0) and _platform.system() == 'Darwin':
 # this is managed by git tag and updated on every release
 # NOTE: this represents the NEXT release version
 
-__version__ = '3.12.1'
+__version__ = '3.13.1'
 
 # do not change this line manually
 # this is managed by proto/build-proto.sh and updated on every execution
@@ -107,6 +107,7 @@ __jina_env__ = (
     'JINA_K8S_ACCESS_MODES',
     'JINA_K8S_STORAGE_CLASS_NAME',
     'JINA_K8S_STORAGE_CAPACITY',
+    'JINA_STREAMER_ARGS',
 )
 
 __default_host__ = _os.environ.get(
@@ -118,6 +119,7 @@ __default_gateway__ = 'BaseGateway'
 __default_http_gateway__ = 'HTTPGateway'
 __default_websocket_gateway__ = 'WebSocketGateway'
 __default_grpc_gateway__ = 'GRPCGateway'
+__default_composite_gateway__ = 'CompositeGateway'
 __default_endpoint__ = '/default'
 __ready_msg__ = 'ready and listening'
 __stop_msg__ = 'terminated'
@@ -211,7 +213,7 @@ from jina.orchestrate.flow.base import Flow
 
 # Executor
 from jina.serve.executors import BaseExecutor as Executor
-from jina.serve.executors.decorators import monitor, requests
+from jina.serve.executors.decorators import dynamic_batching, monitor, requests
 
 # Custom Gateway
 from jina.serve.gateway import BaseGateway as Gateway

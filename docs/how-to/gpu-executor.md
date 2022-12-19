@@ -10,13 +10,12 @@ reducing response latency by anything from 5 to 100 times, depending on the mode
 ```{admonition} Important
 :class: caution
 
-This tutorial assumes familiarity with basic Jina concepts, such as Document, [Executor](../fundamentals/executor/index), and [Flow](../fundamentals/executor/index). Some knowledge of [Executor Hub](../fundamentals/executor/hub/index) is also needed for the last part of the tutorial.
+This tutorial assumes familiarity with basic Jina concepts, such as Document, [Executor](../concepts/executor/index), and [Flow](../concepts/executor/index). Some knowledge of [Executor Hub](../concepts/executor/hub/index) is also needed for the last part of the tutorial.
 ```
 
 ## Jina and GPUs in a nutshell
 
-For a thorough walkthrough of using GPU resources in your code, check the full tutorial in the
-[next section](#Prerequisites).
+For a thorough walkthrough of using GPU resources in your code, check the full tutorial in the {ref}`next section <gpu-prerequisites>`.
 
 If you already know how to use your GPU, just proceed like you usually would in your machine learning framework of choice.
 Jina lets you use GPUs like you would in a Python script or Docker 
@@ -106,6 +105,7 @@ Just like that, your code runs on GPU, inside a Jina Flow.
 Next, we will go through a more fleshed out example in detail, where we use a language model to embed text in our
 Documents - all on GPU, and thus blazingly fast.
 
+(gpu-prerequisites)=
 ## Prerequisites
 
 For this tutorial, you will need to work on a machine with an NVIDIA graphics card. If you

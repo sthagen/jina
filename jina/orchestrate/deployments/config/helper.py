@@ -1,10 +1,11 @@
 import os
 from typing import Dict
 
-from hubble.executor.helper import parse_hub_uri
+from hubble.executor.helper import is_valid_docker_uri, parse_hub_uri
 from hubble.executor.hubio import HubIO
 
 from jina import (
+    __default_composite_gateway__,
     __default_executor__,
     __default_grpc_gateway__,
     __default_http_gateway__,
@@ -132,6 +133,7 @@ def validate_uses(uses: str):
             __default_http_gateway__,
             __default_websocket_gateway__,
             __default_grpc_gateway__,
+            __default_composite_gateway__,
             __default_executor__,
         ]
         or uses.startswith('docker://')
@@ -139,8 +141,6 @@ def validate_uses(uses: str):
         return True
 
     try:
-        scheme, _, _, _ = parse_hub_uri(uses)
-        if scheme in {'jinahub+docker', 'jinahub+sandbox'}:
-            return True
+        return is_valid_docker_uri(uses)
     except ValueError:
         return False

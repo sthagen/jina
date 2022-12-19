@@ -142,7 +142,7 @@ class WorkerRuntime(AsyncNewLoopRuntime, ABC):
             self._health_servicer, self._grpc_server
         )
 
-        reflection.enable_server_reflection(service_names, self._grpc_server)
+        reflection.enable_server_reflection(service_names, self._grpc_server)     
         bind_addr = f'{self.args.host}:{self.args.port}'
         self.logger.debug(f'start listening on {bind_addr}')
         self._grpc_server.add_insecure_port(bind_addr)
@@ -194,9 +194,11 @@ class WorkerRuntime(AsyncNewLoopRuntime, ABC):
         self.logger.debug('cancel WorkerRuntime')
         if self._hot_reload_task is not None:
             self._hot_reload_task.cancel()
+        self.logger.debug('closing the server')
         # 0.5 gives the runtime some time to complete outstanding responses
         # this should be handled better, 1.0 is a rather random number
         await self._health_servicer.enter_graceful_shutdown()
+        await self._request_handler.close()  # allow pending requests to be processed
         await self._grpc_server.stop(1.0)
         self.logger.debug('stopped GRPC Server')
 
@@ -204,7 +206,6 @@ class WorkerRuntime(AsyncNewLoopRuntime, ABC):
         """Close the data request handler"""
         self.logger.debug('tearing down WorkerRuntime')
         await self.async_cancel()
-        self._request_handler.close()
 
     async def process_single_data(self, request: DataRequest, context) -> DataRequest:
         """
@@ -250,7 +251,6 @@ class WorkerRuntime(AsyncNewLoopRuntime, ABC):
         :param context: grpc context
         :returns: the response request
         """
-
         with MetricsTimer(
             self._summary, self._receiving_request_seconds, self._metric_attributes
         ):
@@ -313,3 +313,25 @@ class WorkerRuntime(AsyncNewLoopRuntime, ABC):
         for k, v in env_info.items():
             info_proto.envs[k] = str(v)
         return info_proto
+
+    async def Check(
+        self, request: health_pb2.HealthCheckRequest, context
+    ) -> health_pb2.HealthCheckResponse:
+        """Calls the underlying HealthServicer.Check method with the same arguments
+        :param request: grpc request
+        :param context: grpc request context
+        :returns: the grpc HealthCheckResponse
+        """
+        self.logger.debug(f'Receive Check request')
+        return await self._health_servicer.Check(request, context)
+
+    async def Watch(
+        self, request: health_pb2.HealthCheckRequest, context
+    ) -> health_pb2.HealthCheckResponse:
+        """Calls the underlying HealthServicer.Watch method with the same arguments
+        :param request: grpc request
+        :param context: grpc request context
+        :returns: the grpc HealthCheckResponse
+        """
+        self.logger.debug(f'Receive Watch request')
+        return await self._health_servicer.Watch(request, context)

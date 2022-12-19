@@ -44,6 +44,9 @@ def _cli_to_schema(
             pv['default_literal'] = None
         if p['name'] in {'uses', 'uses_before', 'uses_after'} and target != 'flow':
             pv['type'] = 'Union[str, Type[\'BaseExecutor\'], dict]'
+        if p['name'] == 'protocol':
+            pv['type'] = 'Union[str, List[str]]'
+            print(_schema)
 
         pv['description'] = pv['description'].replace('\n', '\n' + ' ' * 10)
 
@@ -289,6 +292,16 @@ entries = [
         overload_fn='config_gateway',
         class_method=True,
         regex_tag='config_gateway',
+    ),
+    dict(
+        cli_entrypoint='deployment',
+        doc_str_title='Serve this Executor in a temporary Flow. Useful in testing an Executor in remote settings.',
+        doc_str_return='None',
+        return_type=None,
+        filepath='../jina/serve/executors/__init__.py',
+        overload_fn='serve',
+        class_method=True,
+        regex_tag='executor_serve',
     ),
 ]
 

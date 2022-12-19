@@ -1,10 +1,9 @@
 import argparse
 import multiprocessing
 import os
-import threading
 import time
 from abc import ABC, abstractmethod
-from typing import Dict, Optional, Type, Union
+from typing import Dict, Optional, Type, Union, TYPE_CHECKING
 
 from jina import __ready_msg__, __stop_msg__, __windows__
 from jina.enums import PodRoleType
@@ -15,21 +14,23 @@ from jina.logging.logger import JinaLogger
 from jina.orchestrate.pods.helper import ConditionalEvent, _get_event
 from jina.parsers.helper import _update_gateway_args
 from jina.serve.runtimes.asyncio import AsyncNewLoopRuntime
+from jina.serve.runtimes.gateway import GatewayRuntime
+
+if TYPE_CHECKING:
+    import threading
 
 __all__ = ['BasePod', 'Pod']
 
-from jina.serve.runtimes.gateway import GatewayRuntime
-
 
 def run(
-    args: 'argparse.Namespace',
-    name: str,
-    runtime_cls: Type[AsyncNewLoopRuntime],
-    envs: Dict[str, str],
-    is_started: Union['multiprocessing.Event', 'threading.Event'],
-    is_shutdown: Union['multiprocessing.Event', 'threading.Event'],
-    is_ready: Union['multiprocessing.Event', 'threading.Event'],
-    jaml_classes: Optional[Dict] = None,
+        args: 'argparse.Namespace',
+        name: str,
+        runtime_cls: Type[AsyncNewLoopRuntime],
+        envs: Dict[str, str],
+        is_started: Union['multiprocessing.Event', 'threading.Event'],
+        is_shutdown: Union['multiprocessing.Event', 'threading.Event'],
+        is_ready: Union['multiprocessing.Event', 'threading.Event'],
+        jaml_classes: Optional[Dict] = None,
 ):
     """Method representing the :class:`BaseRuntime` activity.
 
@@ -74,6 +75,7 @@ def run(
 
     try:
         _set_envs()
+
         runtime = runtime_cls(
             args=args,
         )
@@ -152,7 +154,7 @@ class BasePod(ABC):
                 self.logger.debug(f'terminate')
                 self._terminate()
                 if not self.is_shutdown.wait(
-                    timeout=self._timeout_ctrl if not __windows__ else 1.0
+                        timeout=self._timeout_ctrl if not __windows__ else 1.0
                 ):
                     if not __windows__:
                         raise Exception(
@@ -287,7 +289,7 @@ class BasePod(ABC):
     @abstractmethod
     def start(self):
         """Start the BasePod.
-        This method calls :meth:`start` in :class:`threading.Thread` or :class:`multiprocesssing.Process`.
+        This method calls :meth:`start` in :class:`multiprocesssing.Process`.
         .. #noqa: DAR201
         """
         ...
@@ -308,8 +310,7 @@ class BasePod(ABC):
 
 class Pod(BasePod):
     """
-    :class:`Pod` is a thread/process- container of :class:`BaseRuntime`. It leverages :class:`threading.Thread`
-    or :class:`multiprocessing.Process` to manage the lifecycle of a :class:`BaseRuntime` object in a robust way.
+    :class:`Pod` is a thread/process- container of :class:`BaseRuntime`. It leverages :class:`multiprocessing.Process` to manage the lifecycle of a :class:`BaseRuntime` object in a robust way.
 
     A :class:`Pod` must be equipped with a proper :class:`Runtime` class to work.
     """
@@ -335,7 +336,7 @@ class Pod(BasePod):
 
     def start(self):
         """Start the Pod.
-        This method calls :meth:`start` in :class:`threading.Thread` or :class:`multiprocesssing.Process`.
+        This method calls :meth:`start` in :class:`multiprocesssing.Process`.
         .. #noqa: DAR201
         """
         self.worker.start()
@@ -347,7 +348,7 @@ class Pod(BasePod):
 
     def join(self, *args, **kwargs):
         """Joins the Pod.
-        This method calls :meth:`join` in :class:`threading.Thread` or :class:`multiprocesssing.Process`.
+        This method calls :meth:`join` in :class:`multiprocesssing.Process`.
 
         :param args: extra positional arguments to pass to join
         :param kwargs: extra keyword arguments to pass to join
@@ -358,7 +359,7 @@ class Pod(BasePod):
 
     def _terminate(self):
         """Terminate the Pod.
-        This method calls :meth:`terminate` in :class:`threading.Thread` or :class:`multiprocesssing.Process`.
+        This method calls :meth:`terminate` in :class:`multiprocesssing.Process`.
         """
         self.logger.debug(f'terminating the runtime process')
         self.worker.terminate()
