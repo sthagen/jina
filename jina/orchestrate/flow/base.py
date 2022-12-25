@@ -37,7 +37,7 @@ from rich.progress import (
 )
 from rich.table import Table
 
-from jina import __default_host__, __docker_host__, __windows__, helper
+from jina.constants import __default_host__, __docker_host__, __windows__
 from jina.clients import Client
 from jina.clients.mixin import AsyncPostMixin, HealthCheckMixin, PostMixin, ProfileMixin
 from jina.enums import (
@@ -62,6 +62,7 @@ from jina.helper import (
     is_port_free,
     send_telemetry_event,
     typename,
+    random_ports
 )
 from jina.importer import ImportExtensions
 from jina.jaml import JAMLCompatible
@@ -366,6 +367,11 @@ class Flow(
                 f = Flow.load_config('flow.yml')  # load Flow from YAML config
                 with f:
                     f.bock()  # serve Flow
+            
+        All arguments received by {class}`~jina.Flow()` API will be propagated to other entities (Gateway, Executor) with the following exceptions:
+
+        - `uses` and `uses_with` won't be passed to Gateway
+        - `port`, `port_monitoring`, `uses` and `uses_with` won't be passed to Executor
 
         :param asyncio: If set, then the input and output of this Client work in an asynchronous manner.
         :param host: The host of the Gateway, which the client should connect to, by default it is 0.0.0.0.
@@ -628,7 +634,7 @@ class Flow(
         )
 
         if not args.port:
-            args.port = helper.random_ports(len(args.protocol))
+            args.port = random_ports(len(args.protocol))
         args.noblock_on_start = True
         args.graph_description = json.dumps(graph_description)
         args.graph_conditions = json.dumps(graph_conditions)
@@ -1871,7 +1877,7 @@ class Flow(
             # kick off all deployments wait-ready tasks
             try:
                 _ = asyncio.get_event_loop()
-            except Exception as e:
+            except:
                 loop = asyncio.new_event_loop()
                 asyncio.set_event_loop(loop)
 
