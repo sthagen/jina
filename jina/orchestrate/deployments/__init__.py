@@ -8,6 +8,7 @@ import threading
 import time
 from argparse import Namespace
 from collections import defaultdict
+from contextlib import ExitStack
 from itertools import cycle
 from typing import TYPE_CHECKING, Dict, List, Optional, Set, Type, Union, overload
 
@@ -23,10 +24,17 @@ from jina.constants import (
     __default_host__,
     __docker_host__,
     __windows__,
+    __default_grpc_gateway__,
 )
-from jina.enums import DeploymentRoleType, GatewayProtocolType, PodRoleType, PollingType
-from jina.helper import ArgNamespace, parse_host_scheme, random_port
+from jina.enums import DeploymentRoleType, PodRoleType, PollingType
+from jina.helper import (
+    ArgNamespace,
+    parse_host_scheme,
+    random_port,
+    send_telemetry_event,
+)
 from jina.importer import ImportExtensions
+from jina.jaml import JAMLCompatible
 from jina.logging.logger import JinaLogger
 from jina.orchestrate.deployments.install_requirements_helper import (
     _get_package_path_from_uses,
@@ -48,7 +56,13 @@ if TYPE_CHECKING:
     from jina.serve.executors import BaseExecutor
 
 
-class Deployment(PostMixin, BaseOrchestrator):
+class DeploymentType(type(ExitStack), type(JAMLCompatible)):
+    """Type of Deployment, metaclass of :class:`Deployment`"""
+
+    pass
+
+
+class Deployment(JAMLCompatible, PostMixin, BaseOrchestrator, metaclass=DeploymentType):
     """A Deployment is an immutable set of pods, which run in replicas. They share the same input and output socket.
     Internally, the pods can run with the process/thread backend. They can be also run in their own containers
     :param args: arguments parsed from the CLI
@@ -201,7 +215,7 @@ class Deployment(PostMixin, BaseOrchestrator):
         :param grpc_server_options: Dictionary of kwargs arguments that will be passed to the grpc server as options when starting the server, example : {'grpc.max_send_message_length': -1}
         :param host: The host of the Gateway, which the client should connect to, by default it is 0.0.0.0. In the case of an external Executor (`--external` or `external=True`) this can be a list of hosts.  Then, every resulting address will be considered as one replica of the Executor.
         :param install_requirements: If set, try to install `requirements.txt` from the local Executor if exists in the Executor folder. If using Hub, install `requirements.txt` in the Hub Executor bundle to local.
-        :param log_config: The YAML config of the logger used in this object.
+        :param log_config: The config name or the absolute path to the YAML config file of the logger used in this object.
         :param metrics: If set, the sdk implementation of the OpenTelemetry metrics will be available for default monitoring and custom measurements. Otherwise a no-op implementation will be provided.
         :param metrics_exporter_host: If tracing is enabled, this hostname will be used to configure the metrics exporter agent.
         :param metrics_exporter_port: If tracing is enabled, this port will be used to configure the metrics exporter agent.
@@ -305,7 +319,7 @@ class Deployment(PostMixin, BaseOrchestrator):
                     self._gateway_kwargs[field] = kwargs.pop(field)
 
             # arguments common to both gateway and the Executor
-            for field in ['host']:
+            for field in ['host', 'log_config']:
                 if field in kwargs:
                     self._gateway_kwargs[field] = kwargs[field]
 
@@ -313,6 +327,9 @@ class Deployment(PostMixin, BaseOrchestrator):
         if args is None:
             args = ArgNamespace.kwargs2namespace(kwargs, parser, True)
         self.args = args
+        log_config = kwargs.get('log_config')
+        if log_config:
+            self.args.log_config = log_config
         self.args.polling = (
             args.polling if hasattr(args, 'polling') else PollingType.ANY
         )
@@ -372,6 +389,15 @@ class Deployment(PostMixin, BaseOrchestrator):
     def __exit__(self, exc_type, exc_val, exc_tb) -> None:
         super().__exit__(exc_type, exc_val, exc_tb)
         self.join()
+        if self._include_gateway:
+            self._stop_time = time.time()
+            send_telemetry_event(
+                event='stop',
+                obj=self,
+                entity_id=self._entity_id,
+                duration=self._stop_time - self._start_time,
+                exc_type=str(exc_type),
+            )
         self.logger.close()
 
     def _parse_addresses_into_host_and_port(self):
@@ -767,7 +793,7 @@ class Deployment(PostMixin, BaseOrchestrator):
             ([self.pod_args['uses_before']] if self.pod_args['uses_before'] else [])
             + ([self.pod_args['uses_after']] if self.pod_args['uses_after'] else [])
             + ([self.pod_args['head']] if self.pod_args['head'] else [])
-            + ([self.pod_args['gateway']] if self.pod_args['gateway'] else [])
+            + ([self.pod_args['gateway']] if self._include_gateway else [])
         )
         for shard_id in self.pod_args['pods']:
             all_args += self.pod_args['pods'][shard_id]
@@ -827,6 +853,7 @@ class Deployment(PostMixin, BaseOrchestrator):
             If one of the :class:`Pod` fails to start, make sure that all of them
             are properly closed.
         """
+        self._start_time = time.time()
         if self.is_sandbox and not self._sandbox_deployed:
             self.update_sandbox_args()
 
@@ -851,7 +878,7 @@ class Deployment(PostMixin, BaseOrchestrator):
                 _args.noblock_on_start = True
             self.head_pod = PodFactory.build_pod(_args)
             self.enter_context(self.head_pod)
-        if self.pod_args['gateway'] is not None:
+        if self._include_gateway:
             _args = self.pod_args['gateway']
             if getattr(self.args, 'noblock_on_start', False):
                 _args.noblock_on_start = True
@@ -865,13 +892,15 @@ class Deployment(PostMixin, BaseOrchestrator):
             )
             self.enter_context(self.shards[shard_id])
 
-        if self.pod_args['gateway']:
+        if self._include_gateway:
             all_panels = []
             self._get_summary_table(all_panels)
 
             from rich.rule import Rule
 
             print(Rule(':tada: Deployment is ready to serve!'), *all_panels)
+
+            send_telemetry_event(event='start', obj=self, entity_id=self._entity_id)
 
         return self
 
@@ -1015,7 +1044,7 @@ class Deployment(PostMixin, BaseOrchestrator):
         return all_devices[slice(*[int(p) if p else None for p in parts])]
 
     @staticmethod
-    def _roundrobin_cuda_device(device_str: str, replicas: int):
+    def _roundrobin_cuda_device(device_str: Optional[str], replicas: int):
         """Parse cuda device string with RR prefix
 
         :param device_str: `RRm:n`, where `RR` is the prefix, m:n is python slice format
@@ -1054,9 +1083,14 @@ class Deployment(PostMixin, BaseOrchestrator):
         sharding_enabled = shards and shards > 1
 
         cuda_device_map = None
-        if self.args.env:
+        if self.args.env or os.environ.get('CUDA_VISIBLE_DEVICES', '').startswith('RR'):
+            cuda_visible_devices = (
+                self.args.env.get('CUDA_VISIBLE_DEVICES')
+                if self.args.env and 'CUDA_VISIBLE_DEVICES' in self.args.env
+                else os.environ.get('CUDA_VISIBLE_DEVICES', None)
+            )
             cuda_device_map = Deployment._roundrobin_cuda_device(
-                self.args.env.get('CUDA_VISIBLE_DEVICES'), replicas
+                cuda_visible_devices, replicas
             )
 
         for shard_id in range(shards):
@@ -1075,6 +1109,7 @@ class Deployment(PostMixin, BaseOrchestrator):
                     _args.host = self.args.host
 
                 if cuda_device_map:
+                    _args.env = _args.env or {}
                     _args.env['CUDA_VISIBLE_DEVICES'] = str(cuda_device_map[replica_id])
 
                 if _args.name:
@@ -1399,6 +1434,109 @@ class Deployment(PostMixin, BaseOrchestrator):
         )
 
         return all_panels
+
+    @property
+    def _docker_compose_address(self):
+        from jina.orchestrate.deployments.config.docker_compose import port
+        from jina.orchestrate.deployments.config.helper import to_compatible_name
+
+        if self.external:
+            docker_compose_address = [f'{self.protocol}://{self.host}:{self.port}']
+        elif self.head_args:
+            docker_compose_address = [
+                f'{to_compatible_name(self.head_args.name)}:{port}'
+            ]
+        else:
+            if self.args.replicas == 1:
+                docker_compose_address = [f'{to_compatible_name(self.name)}:{port}']
+            else:
+                docker_compose_address = []
+                for rep_id in range(self.args.replicas):
+                    node_name = f'{self.name}/rep-{rep_id}'
+                    docker_compose_address.append(
+                        f'{to_compatible_name(node_name)}:{port}'
+                    )
+        return docker_compose_address
+
+    def _to_docker_compose_config(self, deployments_addresses=None):
+        from jina.orchestrate.deployments.config.docker_compose import (
+            DockerComposeConfig,
+        )
+
+        docker_compose_deployment = DockerComposeConfig(
+            args=self.args, deployments_addresses=deployments_addresses
+        )
+        return docker_compose_deployment.to_docker_compose_config()
+
+    def _inner_gateway_to_docker_compose_config(self):
+        from jina.orchestrate.deployments.config.docker_compose import (
+            DockerComposeConfig,
+        )
+
+        self.pod_args['gateway'].port = self.pod_args['gateway'].port or [random_port()]
+        cargs = copy.deepcopy(self.pod_args['gateway'])
+        cargs.uses = __default_grpc_gateway__
+        cargs.graph_description = (
+            f'{{"{self.name}": ["end-gateway"], "start-gateway": ["{self.name}"]}}'
+        )
+
+        docker_compose_deployment = DockerComposeConfig(
+            args=cargs,
+            deployments_addresses={self.name: self._docker_compose_address},
+        )
+        return docker_compose_deployment.to_docker_compose_config()
+
+    def to_docker_compose_yaml(
+        self,
+        output_path: Optional[str] = None,
+        network_name: Optional[str] = None,
+    ):
+        """
+        Converts a Jina Deployment into a Docker compose YAML file
+
+        If you don't want to rebuild image on Jina Hub,
+        you can set `JINA_HUB_NO_IMAGE_REBUILD` environment variable.
+
+        :param output_path: The path where to dump the yaml file
+        :param network_name: The name of the network that will be used by the deployment
+        """
+        import yaml
+
+        output_path = output_path or 'docker-compose.yml'
+        network_name = network_name or 'jina-network'
+
+        docker_compose_dict = {
+            'version': '3.3',
+            'networks': {network_name: {'driver': 'bridge'}},
+        }
+        services = {}
+
+        service_configs = self._to_docker_compose_config()
+
+        for service_name, service in service_configs:
+            service['networks'] = [network_name]
+            services[service_name] = service
+
+        if self._include_gateway:
+            service_configs = self._inner_gateway_to_docker_compose_config()
+
+            for service_name, service in service_configs:
+                service['networks'] = [network_name]
+                services[service_name] = service
+
+        docker_compose_dict['services'] = services
+        with open(output_path, 'w+') as fp:
+            yaml.dump(docker_compose_dict, fp, sort_keys=False)
+
+        command = (
+            'docker-compose up'
+            if output_path is None
+            else f'docker-compose -f {output_path} up'
+        )
+
+        self.logger.info(
+            f'Docker compose file has been created under [b]{output_path}[/b]. You can use it by running [b]{command}[/b]'
+        )
 
     def _to_kubernetes_yaml(
         self,
