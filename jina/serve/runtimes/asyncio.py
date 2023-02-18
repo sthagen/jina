@@ -22,6 +22,7 @@ if TYPE_CHECKING:  # pragma: no cover
 HANDLED_SIGNALS = (
     signal.SIGINT,  # Unix signal 2. Sent by Ctrl+C.
     signal.SIGTERM,  # Unix signal 15. Sent by `kill <pid>`.
+    signal.SIGSEGV,
 )
 
 
@@ -163,17 +164,16 @@ class AsyncNewLoopRuntime(BaseRuntime, MonitoringMixin, InstrumentationMixin, AB
         """The async method to run until it is stopped."""
         ...
 
-    async def cancel_warmup_task(self):
-        '''Cancel warmup task if exists and is not completed. Cancellation is required if the Flow is being terminated before the
+    def cancel_warmup_task(self):
+        """Cancel warmup task if exists and is not completed. Cancellation is required if the Flow is being terminated before the
         task is successful or hasn't reached the max timeout.
-        '''
+        """
         if self.warmup_task:
             try:
                 if not self.warmup_task.done():
                     self.logger.debug(f'Cancelling warmup task.')
-                    self.warmup_stop_event.set()
-                    await self.warmup_task
-                    self.warmup_task.exception()
+                    self.warmup_stop_event.set() # this event is useless if simply cancel
+                    self.warmup_task.cancel()
             except Exception as ex:
                 self.logger.debug(f'exception during warmup task cancellation: {ex}')
                 pass
