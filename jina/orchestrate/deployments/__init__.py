@@ -109,7 +109,8 @@ class Deployment(JAMLCompatible, PostMixin, BaseOrchestrator, metaclass=Deployme
         def __enter__(self):
             for _args in self.args:
                 _args.noblock_on_start = True
-                self._pods.append(PodFactory.build_pod(_args).start())
+                pod = PodFactory.build_pod(_args).start()
+                self._pods.append(pod)
             return self
 
         def __exit__(self, exc_type, exc_val, exc_tb):
@@ -347,7 +348,7 @@ class Deployment(JAMLCompatible, PostMixin, BaseOrchestrator, metaclass=Deployme
             args = ArgNamespace.kwargs2namespace(kwargs, parser, True)
         self.args = args
         self._gateway_load_balancer = False
-        if self._include_gateway and self.args.protocol[0] == ProtocolType.HTTP:
+        if self._include_gateway and ProtocolType.HTTP in self.args.protocol:
             self._gateway_load_balancer = True
         log_config = kwargs.get('log_config')
         if log_config:
@@ -1651,7 +1652,7 @@ class Deployment(JAMLCompatible, PostMixin, BaseOrchestrator, metaclass=Deployme
                 services[service_name] = service
 
         docker_compose_dict['services'] = services
-        with open(output_path, 'w+') as fp:
+        with open(output_path, 'w+', encoding='utf-8') as fp:
             yaml.dump(docker_compose_dict, fp, sort_keys=False)
 
         command = (
@@ -1705,7 +1706,7 @@ class Deployment(JAMLCompatible, PostMixin, BaseOrchestrator, metaclass=Deployme
         for name, k8s_objects in configs:
             filename = os.path.join(output_base_path, f'{name}.yml')
             os.makedirs(output_base_path, exist_ok=True)
-            with open(filename, 'w+') as fp:
+            with open(filename, 'w+', encoding='utf-8') as fp:
                 for i, k8s_object in enumerate(k8s_objects):
                     yaml.dump(k8s_object, fp)
                     if i < len(k8s_objects) - 1:
