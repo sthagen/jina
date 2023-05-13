@@ -1,8 +1,10 @@
 import os
+import subprocess
 import sys
+import platform
 from os import path
 
-from setuptools import find_packages, setup
+from setuptools import Extension, find_packages, setup
 from setuptools.command.develop import develop
 from setuptools.command.egg_info import egg_info
 from setuptools.command.install import install
@@ -158,6 +160,34 @@ if sys.version_info.major == 3 and sys.version_info.minor >= 11:
     final_deps.add('grpcio-health-checking>=1.49.0')
     final_deps.add('grpcio-reflection>=1.49.0')
 
+
+extra_golang_kw = {}
+
+ret_code = -1
+
+try:
+    ret_code = subprocess.run(['go', 'version']).returncode
+except Exception:
+    pass
+
+is_mac_os = platform.system() == 'Darwin'
+is_windows_os = platform.system() == 'Windows'
+is_37 = sys.version_info.major == 3 and sys.version_info.minor == 7
+
+if ret_code == 0 and not is_windows_os and (not is_mac_os or not is_37):
+    extra_golang_kw = {
+        'build_golang': {'root': 'jraft', 'strip': False},
+        'ext_modules': [
+            Extension(
+                'jraft',
+                ['jina/serve/consensus/run.go'],
+                py_limited_api=True,
+                define_macros=[('Py_LIMITED_API', None)],
+            )
+        ],
+        'setup_requires': ['setuptools-golang'],
+    }
+
 setup(
     name=pkg_name,
     packages=find_packages(),
@@ -216,4 +246,5 @@ setup(
     },
     keywords='jina cloud-native cross-modal multimodal neural-search query search index elastic neural-network encoding '
     'embedding serving docker container image video audio deep-learning mlops',
+    **extra_golang_kw,
 )
