@@ -560,6 +560,9 @@ class Deployment(JAMLCompatible, PostMixin, BaseOrchestrator, metaclass=Deployme
             args.graph_description = (
                 '{"start-gateway": ["executor"], "executor": ["end-gateway"]}'
             )
+            _update_gateway_args(
+                args, gateway_load_balancer=self._gateway_load_balancer
+            )
             self.pod_args['gateway'] = args
         else:
             self.pod_args['gateway'] = None
@@ -1707,6 +1710,8 @@ class Deployment(JAMLCompatible, PostMixin, BaseOrchestrator, metaclass=Deployme
         else:
             _ports = [str(_p) for _p in self.first_pod_args.port]
 
+        swagger_ui_link = None
+        redoc_link = None
         for _port, _protocol in zip(_ports, _protocols):
 
             address_table.add_row(':chains:', 'Protocol', _protocol)
@@ -1730,6 +1735,10 @@ class Deployment(JAMLCompatible, PostMixin, BaseOrchestrator, metaclass=Deployme
                     f'[link={_protocol}://{self.address_public}:{_port}]{self.address_public}:{_port}[/]',
                 )
 
+            if _protocol == ProtocolType.HTTP.to_string().lower():
+                swagger_ui_link = f'[link={_protocol}://{self.host}:{_port}/docs]{self.host}:{_port}/docs'
+                redoc_link = f'[link={_protocol}://{self.host}:{_port}/redoc]{self.host}:{_port}/redoc'
+
         all_panels.append(
             Panel(
                 address_table,
@@ -1741,20 +1750,9 @@ class Deployment(JAMLCompatible, PostMixin, BaseOrchestrator, metaclass=Deployme
         if ProtocolType.HTTP.to_string().lower() in [p.lower() for p in _protocols]:
 
             http_ext_table = self._init_table()
+            http_ext_table.add_row(':speech_balloon:', 'Swagger UI', swagger_ui_link)
 
-            _protocol = ProtocolType.HTTP.to_string()
-
-            http_ext_table.add_row(
-                ':speech_balloon:',
-                'Swagger UI',
-                f'[link={_protocol}://{self.host}:{self.port}/docs]{self.host}:{self.port}/docs',
-            )
-
-            http_ext_table.add_row(
-                ':books:',
-                'Redoc',
-                f'[link={_protocol}://{self.host}:{self.port}/redoc]{self.host}:{self.port}/redoc',
-            )
+            http_ext_table.add_row(':books:', 'Redoc', redoc_link)
 
             all_panels.append(
                 Panel(
