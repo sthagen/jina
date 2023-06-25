@@ -63,19 +63,17 @@ class DeploymentType(type(ExitStack), type(JAMLCompatible)):
     pass
 
 
-def _call_add_voters(leader, voters, replica_ids, event_signal=None):
+def _call_add_voters(leader, voters, replica_ids, name, event_signal=None):
     # this method needs to be run in multiprocess, importing jraft in main process
     # makes it impossible to do tests sequentially
 
     import jraft
 
-    logger = JinaLogger(
-        'add_voter',
-    )
-
+    logger = JinaLogger(context=f'add_voter-{name}', name=f'add_voter-{name}')
+    logger.debug(f'Trying to add {len(replica_ids)} voters to leader {leader}')
     for voter_address, replica_id in zip(voters, replica_ids):
         logger.debug(
-            f'Trying to add {str(replica_id)} as voter with address {voter_address} to leader at {leader}'
+            f'Trying to add replica-{str(replica_id)} as voter with address {voter_address} to leader at {leader}'
         )
         success = False
         for i in range(5):
@@ -96,8 +94,9 @@ def _call_add_voters(leader, voters, replica_ids, event_signal=None):
             )
         else:
             logger.success(
-                f'{str(replica_id)} successfully added as voter with address {voter_address} to leader at {leader}'
+                f'Replica-{str(replica_id)} successfully added as voter with address {voter_address} to leader at {leader}'
             )
+    logger.debug(f'Adding voters to leader finished')
     if event_signal:
         event_signal.set()
 
@@ -123,7 +122,9 @@ class Deployment(JAMLCompatible, PostMixin, BaseOrchestrator, metaclass=Deployme
             self._pods = []
             self.head_pod = head_pod
             self.name = name
-            self.logger = JinaLogger(name, **vars(self.deployment_args))
+            logger_kwargs = vars(self.deployment_args)
+            logger_kwargs.pop('name')
+            self.logger = JinaLogger(context=self.name, name=self.name, **logger_kwargs)
 
         def _add_voter_to_leader(self):
             leader_address = f'{self._pods[0].runtime_ctrl_address}'
@@ -137,9 +138,9 @@ class Deployment(JAMLCompatible, PostMixin, BaseOrchestrator, metaclass=Deployme
                     'leader': leader_address,
                     'voters': voter_addresses,
                     'replica_ids': replica_ids,
+                    'name': self.name,
                     'event_signal': event_signal,
                 },
-                daemon=True,
             )
             process.start()
             start = time.time()
@@ -152,8 +153,9 @@ class Deployment(JAMLCompatible, PostMixin, BaseOrchestrator, metaclass=Deployme
                     time.sleep(1.0)
             if properly_closed:
                 self.logger.debug(f'Add Voters process finished')
+                process.terminate()
             else:
-                self.logger.error(f' Add Voters process did not finish successfully')
+                self.logger.error(f'Add Voters process did not finish successfully')
                 process.kill()
             self.logger.debug(f'Add Voters process finished')
 
@@ -169,9 +171,9 @@ class Deployment(JAMLCompatible, PostMixin, BaseOrchestrator, metaclass=Deployme
                     'leader': leader_address,
                     'voters': voter_addresses,
                     'replica_ids': replica_ids,
+                    'name': self.name,
                     'event_signal': event_signal,
                 },
-                daemon=True,
             )
             process.start()
             start = time.time()
@@ -184,8 +186,9 @@ class Deployment(JAMLCompatible, PostMixin, BaseOrchestrator, metaclass=Deployme
                     await asyncio.sleep(1.0)
             if properly_closed:
                 self.logger.debug(f'Add Voters process finished')
+                process.terminate()
             else:
-                self.logger.error(f' Add Voters process did not finish successfully')
+                self.logger.error(f'Add Voters process did not finish successfully')
                 process.kill()
 
         @property
@@ -204,21 +207,23 @@ class Deployment(JAMLCompatible, PostMixin, BaseOrchestrator, metaclass=Deployme
                 pod.join()
 
         def wait_start_success(self):
+            self.logger.debug(f'Waiting for ReplicaSet to start successfully')
             for pod in self._pods:
                 pod.wait_start_success()
             # should this be done only when the cluster is started ?
             if self._pods[0].args.stateful:
                 self._add_voter_to_leader()
-            self.logger.debug(f'ReplicaSet {self.name} started successfully')
+            self.logger.debug(f'ReplicaSet started successfully')
 
         async def async_wait_start_success(self):
+            self.logger.debug(f'Waiting for ReplicaSet to start successfully')
             await asyncio.gather(
                 *[pod.async_wait_start_success() for pod in self._pods]
             )
             # should this be done only when the cluster is started ?
             if self._pods[0].args.stateful:
                 await self._async_add_voter_to_leader()
-            self.logger.debug(f'ReplicaSet {self.name} started successfully')
+            self.logger.debug(f'ReplicaSet started successfully')
 
         def __enter__(self):
             for _args in self.args:
@@ -1125,18 +1130,6 @@ class Deployment(JAMLCompatible, PostMixin, BaseOrchestrator, metaclass=Deployme
             _args.noblock_on_start = True
             self.uses_after_pod = PodFactory.build_pod(_args)
             self.enter_context(self.uses_after_pod)
-        if self.pod_args['head'] is not None:
-            _args = self.pod_args['head']
-            _args.noblock_on_start = True
-            self.head_pod = PodFactory.build_pod(_args)
-            self.enter_context(self.head_pod)
-        if self._include_gateway:
-            _args = self.pod_args['gateway']
-            _args.noblock_on_start = True
-            self.gateway_pod = PodFactory.build_pod(
-                _args, gateway_load_balancer=self._gateway_load_balancer
-            )
-            self.enter_context(self.gateway_pod)
 
         num_shards = len(self.pod_args['pods'])
         for shard_id in self.pod_args['pods']:
@@ -1149,6 +1142,20 @@ class Deployment(JAMLCompatible, PostMixin, BaseOrchestrator, metaclass=Deployme
                 else f'{self.name}-replica-set',
             )
             self.enter_context(self.shards[shard_id])
+
+        if self.pod_args['head'] is not None:
+            _args = self.pod_args['head']
+            _args.noblock_on_start = True
+            self.head_pod = PodFactory.build_pod(_args)
+            self.enter_context(self.head_pod)
+
+        if self._include_gateway:
+            _args = self.pod_args['gateway']
+            _args.noblock_on_start = True
+            self.gateway_pod = PodFactory.build_pod(
+                _args, gateway_load_balancer=self._gateway_load_balancer
+            )
+            self.enter_context(self.gateway_pod)
 
         if not self.args.noblock_on_start:
             self._wait_until_all_ready()
@@ -1199,12 +1206,13 @@ class Deployment(JAMLCompatible, PostMixin, BaseOrchestrator, metaclass=Deployme
                 coros.append(self.uses_before_pod.async_wait_start_success())
             if self.uses_after_pod is not None:
                 coros.append(self.uses_after_pod.async_wait_start_success())
-            if self.head_pod is not None:
-                coros.append(self.head_pod.async_wait_start_success())
             if self.gateway_pod is not None:
                 coros.append(self.gateway_pod.async_wait_start_success())
+            if self.head_pod is not None:
+                coros.append(self.head_pod.async_wait_start_success())
             for shard_id in self.shards:
                 coros.append(self.shards[shard_id].async_wait_start_success())
+
             await asyncio.gather(*coros)
             self.logger.debug(f'Deployment started successfully')
         except:
@@ -1218,13 +1226,13 @@ class Deployment(JAMLCompatible, PostMixin, BaseOrchestrator, metaclass=Deployme
                 self.uses_before_pod.join()
             if self.uses_after_pod is not None:
                 self.uses_after_pod.join()
+            if self.shards:
+                for shard_id in self.shards:
+                    self.shards[shard_id].join()
             if self.head_pod is not None:
                 self.head_pod.join()
             if self.gateway_pod is not None:
                 self.gateway_pod.join()
-            if self.shards:
-                for shard_id in self.shards:
-                    self.shards[shard_id].join()
         except KeyboardInterrupt:
             pass
         finally:

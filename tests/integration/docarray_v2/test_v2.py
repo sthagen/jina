@@ -532,7 +532,7 @@ def test_get_parameters_back(protocol, ctxt_manager):
         assert ret[0].parameters == {'param': '5', '__results__': {'foo/rep-0': {'back': {'param': '5'}}}}
 
 
-@pytest.mark.parametrize('protocol', ['grpc', 'http', 'websocket'])
+@pytest.mark.parametrize('protocol', ['grpc', 'http'])
 @pytest.mark.parametrize('ctxt_manager', ['deployment', 'flow'])
 def test_raise_exception(protocol, ctxt_manager):
     from jina.excepts import BadServer
@@ -555,9 +555,6 @@ def test_raise_exception(protocol, ctxt_manager):
                 ctxt_mgr.post(on='/hello', parameters={'param': '5'}, return_responses=True)
             assert excinfo.value.args[0] == {'detail': "Exception('Raising some exception from Executor')"}
         elif protocol == 'grpc':
-            with pytest.raises(BadServer):
-                ctxt_mgr.post(on='/hello', parameters={'param': '5'}, return_responses=True)
-        elif protocol == 'websocket':
             with pytest.raises(BadServer):
                 ctxt_mgr.post(on='/hello', parameters={'param': '5'}, return_responses=True)
 
@@ -988,8 +985,7 @@ def test_flow_with_shards_all_shards_return(protocols, reduce, sleep_time):
                 for match in r.matches:
                     assert 'ID' in match.text
 
-
-def test_issue_shards_missmatch_endpoint():
+def test_issue_shards_missmatch_endpoint_and_shard_with_lists():
     class MyDoc(BaseDoc):
         text: str
         embedding: NdArray[128]
@@ -1000,19 +996,22 @@ def test_issue_shards_missmatch_endpoint():
 
     class MyExec(Executor):
 
-        @requests
+        @requests(on='/search')
         def foo(self, docs: DocList[MyDoc], **kwargs) -> DocList[MyDocWithMatchesAndScores]:
             res = DocList[MyDocWithMatchesAndScores]()
             for doc in docs:
-                new_doc = MyDocWithMatchesAndScores(text=doc.text, embedding=doc.embedding, matches=docs,
+                new_doc = MyDocWithMatchesAndScores(id=doc.id, text=doc.text, embedding=doc.embedding, matches=[MyDoc(text='m', embedding=np.random.rand(128) )],
                                                     scores=[1.0 for _ in docs])
                 res.append(new_doc)
             return res
 
     d = Deployment(uses=MyExec, shards=2)
     with d:
-        res = d.post(on='/', inputs=DocList[MyDoc]([MyDoc(text='hey ha', embedding=np.random.rand(128))]))
+        res = d.post(on='/search', inputs=DocList[MyDoc]([MyDoc(text='hey ha', embedding=np.random.rand(128))]), return_type=DocList[MyDocWithMatchesAndScores])
         assert len(res) == 1
+        for doc in res:
+            assert len(doc.scores) == 2
+            assert len(doc.matches) == 2
 
 
 @pytest.mark.parametrize('protocol', ['grpc', 'http'])

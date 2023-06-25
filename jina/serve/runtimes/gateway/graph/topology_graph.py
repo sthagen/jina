@@ -76,7 +76,7 @@ class TopologyGraph:
         def _validate_against_outgoing_nodes(self):
             for node in self.outgoing_nodes:
                 # here validate for each endpoint that output of self matches input of node
-                if node._pydantic_models_by_endpoint is not None: # gateway end
+                if node._pydantic_models_by_endpoint is not None:  # gateway end
 
                     for endp in self._pydantic_models_by_endpoint.keys():
                         outgoing_enp = endp
@@ -573,9 +573,18 @@ class TopologyGraph:
         self.has_filter_conditions = bool(graph_conditions)
         self._all_endpoints = None
 
-    async def _get_all_endpoints(self, connection_pool, retry_forever=False):
+    async def _get_all_endpoints(self, connection_pool, retry_forever=False, is_cancel=None):
+        def _condition():
+            if is_cancel is not None:
+                is_cancelled = is_cancel.is_set()
+                if is_cancelled:
+                    self.logger.debug(f'cancel get all endpoints')
+                return not is_cancelled
+            else:
+                return True
+
         if not self._all_endpoints:
-            while True:
+            while _condition():
                 try:
                     models_schemas_list = []
                     models_list = []
