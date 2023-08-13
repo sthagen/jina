@@ -6,7 +6,6 @@ from typing import TYPE_CHECKING, Dict, Optional, Tuple, Type
 from jina._docarray import Document, DocumentArray, docarray_v2
 from jina.clients.base import BaseClient
 from jina.clients.base.helper import (
-    AioHttpClientlet,
     HTTPClientlet,
     handle_response_status,
 )
@@ -203,9 +202,12 @@ class HTTPBaseClient(BaseClient):
                     if not docarray_v2:
                         da = DocumentArray.from_dict(r_str['data'])
                     else:
-                        da = return_type(
-                            [return_type.doc_type(**v) for v in r_str['data']]
-                        )
+                        from docarray import DocList
+                        if issubclass(return_type, DocList):
+                            da = return_type(
+                                [return_type.doc_type(**v) for v in r_str['data']])
+                        else:
+                            da = DocList[return_type]([return_type(**v) for v in r_str['data']])
                     del r_str['data']
 
                 resp = DataRequest(r_str)
@@ -214,11 +216,11 @@ class HTTPBaseClient(BaseClient):
 
                 callback_exec(
                     response=resp,
+                    logger=self.logger,
                     on_error=on_error,
                     on_done=on_done,
                     on_always=on_always,
                     continue_on_error=self.continue_on_error,
-                    logger=self.logger,
                 )
                 if self.show_progress:
                     p_bar.update()

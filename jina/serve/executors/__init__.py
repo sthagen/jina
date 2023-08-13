@@ -9,6 +9,7 @@ import multiprocessing
 import os
 import threading
 import warnings
+from collections.abc import AsyncGenerator, AsyncIterator, Generator, Iterator
 from types import SimpleNamespace
 from typing import (
     TYPE_CHECKING,
@@ -21,6 +22,7 @@ from typing import (
     Type,
     TypeVar,
     Union,
+    _GenericAlias,
     overload,
 )
 
@@ -31,7 +33,6 @@ from jina.helper import (
     ArgNamespace,
     T,
     get_or_reuse_loop,
-    is_generator,
     iscoroutinefunction,
     typename,
 )
@@ -59,6 +60,56 @@ if TYPE_CHECKING:  # pragma: no cover
 __dry_run_endpoint__ = '_jina_dry_run_'
 
 __all__ = ['BaseExecutor', __dry_run_endpoint__]
+
+
+def is_pydantic_model(annotation: Type) -> bool:
+    """Method to detect if parameter annotation corresponds to a Pydantic model
+
+    :param annotation: The annotation from which to extract PydantiModel.
+    :return: boolean indicating if a Pydantic model is inside the annotation
+    """
+    from pydantic import BaseModel
+    from typing import get_args, get_origin
+
+    origin = get_origin(annotation) or annotation
+    args = get_args(annotation)
+
+    # If the origin itself is a Pydantic model, return True
+    if isinstance(origin, type) and issubclass(origin, BaseModel):
+        return True
+
+    # Check the arguments (for the actual types inside Union, Optional, etc.)
+    if args:
+        return any(is_pydantic_model(arg) for arg in args)
+
+    return False
+
+
+def get_inner_pydantic_model(annotation: Type) -> bool:
+    """Method to get the Pydantic model corresponding, in case there is optional or something
+
+    :param annotation: The annotation from which to extract PydantiModel.
+    :return: The inner Pydantic model expected
+    """
+    try:
+        from pydantic import BaseModel
+        from typing import Type, Optional, get_args, get_origin, Union
+
+        origin = get_origin(annotation) or annotation
+        args = get_args(annotation)
+
+        # If the origin itself is a Pydantic model, return True
+        if isinstance(origin, type) and issubclass(origin, BaseModel):
+            return origin
+
+        # Check the arguments (for the actual types inside Union, Optional, etc.)
+        if args:
+            for arg in args:
+                if is_pydantic_model(arg):
+                    return arg
+    except:
+        pass
+    return None
 
 
 class ExecutorType(type(JAMLCompatible), type):
@@ -112,19 +163,101 @@ T = TypeVar('T', bound='_FunctionWithSchema')
 
 class _FunctionWithSchema(NamedTuple):
     fn: Callable
+    is_generator: bool
+    is_batch_docs: bool
+    is_singleton_doc: False
+    parameters_is_pydantic_model: bool
+    parameters_model: Type
     request_schema: Type[DocumentArray] = DocumentArray
     response_schema: Type[DocumentArray] = DocumentArray
 
+    def validate(self):
+        assert not (
+            self.is_singleton_doc and self.is_batch_docs
+        ), f'Cannot specify both the `doc` and the `docs` paramater for {self.fn.__name__}'
+        assert not (
+            self.is_generator and self.is_batch_docs
+        ), f'Cannot specify the `docs` parameter if the endpoint {self.fn.__name__} is a generator'
+        if docarray_v2:
+            from docarray import DocList, BaseDoc
+
+            if not self.is_generator:
+                if self.is_batch_docs and (
+                    not issubclass(self.request_schema, DocList)
+                    or not issubclass(self.response_schema, DocList)
+                ):
+                    faulty_schema = (
+                        'request_schema'
+                        if not issubclass(self.request_schema, DocList)
+                        else 'response_schema'
+                    )
+                    raise Exception(
+                        f'The {faulty_schema} schema for {self.fn.__name__}: {self.request_schema} is not a DocList. Please make sure that your endpoint used DocList for request and response schema'
+                    )
+                if self.is_singleton_doc and (
+                    not issubclass(self.request_schema, BaseDoc)
+                    or not issubclass(self.response_schema, BaseDoc)
+                ):
+                    faulty_schema = (
+                        'request_schema'
+                        if not issubclass(self.request_schema, BaseDoc)
+                        else 'response_schema'
+                    )
+                    raise Exception(
+                        f'The {faulty_schema} schema for {self.fn.__name__}: {self.request_schema} is not a BaseDoc. Please make sure that your endpoint used BaseDoc for request and response schema'
+                    )
+            else:
+                if not issubclass(self.request_schema, BaseDoc) or not (
+                    issubclass(self.response_schema, BaseDoc)
+                    or issubclass(self.response_schema, BaseDoc)
+                ):  # response_schema may be a DocList because by default we use LegacyDocument, and for generators we ignore response
+                    faulty_schema = (
+                        'request_schema'
+                        if not issubclass(self.request_schema, BaseDoc)
+                        else 'response_schema'
+                    )
+                    raise Exception(
+                        f'The {faulty_schema} schema for {self.fn.__name__}: {self.request_schema} is not a BaseDoc. Please make sure that your streaming endpoints used BaseDoc for request and response schema'
+                    )
+
     @staticmethod
     def get_function_with_schema(fn: Callable) -> T:
-
         # if it's not a generator function, infer the type annotation from the docs parameter
         # otherwise, infer from the doc parameter (since generator endpoints expect only 1 document as input)
         is_generator = getattr(fn, '__is_generator__', False)
-        if not is_generator:
-            docs_annotation = fn.__annotations__.get('docs', None)
+        is_singleton_doc = 'doc' in fn.__annotations__
+        is_batch_docs = (
+            not is_singleton_doc
+        )  # some tests just use **kwargs and should work as before
+        assert not (
+            is_singleton_doc and is_batch_docs
+        ), f'Cannot specify both the `doc` and the `docs` paramater for {fn.__name__}'
+        assert not (
+            is_generator and is_batch_docs
+        ), f'Cannot specify the `docs` parameter if the endpoint {fn.__name__} is a generator'
+        docs_annotation = fn.__annotations__.get(
+            'docs', fn.__annotations__.get('doc', None)
+        )
+        parameters_model = (
+            fn.__annotations__.get('parameters', None) if docarray_v2 else None
+        )
+        parameters_is_pydantic_model = False
+        if parameters_model is not None and docarray_v2:
+            from pydantic import BaseModel
+
+            parameters_is_pydantic_model = is_pydantic_model(parameters_model)
+            parameters_model = get_inner_pydantic_model(parameters_model)
+
+        if docarray_v2:
+            from docarray import BaseDoc, DocList
+
+            default_annotations = (
+                DocList[LegacyDocument] if is_batch_docs else LegacyDocument
+            )
         else:
-            docs_annotation = fn.__annotations__.get('doc', None)
+            from jina import Document, DocumentArray
+
+            default_annotations = DocumentArray if is_batch_docs else Document
 
         if docs_annotation is None:
             pass
@@ -156,6 +289,18 @@ class _FunctionWithSchema(NamedTuple):
                 ''
             )
             return_annotation = None
+        elif isinstance(return_annotation, _GenericAlias):
+            from typing import get_args, get_origin
+
+            if get_origin(return_annotation) == Generator:
+                return_annotation = get_args(return_annotation)[0]
+            elif get_origin(return_annotation) == AsyncGenerator:
+                return_annotation = get_args(return_annotation)[0]
+            elif get_origin(return_annotation) == Iterator:
+                return_annotation = get_args(return_annotation)[0]
+            elif get_origin(return_annotation) == AsyncIterator:
+                return_annotation = get_args(return_annotation)[0]
+
         elif not isinstance(return_annotation, type):
             warnings.warn(
                 f'`return` annotation must be a class if you want to use it'
@@ -163,45 +308,21 @@ class _FunctionWithSchema(NamedTuple):
                 ''
             )
             return_annotation = None
-        if not docarray_v2:
-            request_schema = docs_annotation or DocumentArray
-            response_schema = return_annotation or DocumentArray
-        else:
-            from docarray import DocList, BaseDoc
 
-            if not is_generator:
-                request_schema = docs_annotation or DocList[LegacyDocument]
-                response_schema = return_annotation or DocList[LegacyDocument]
-            else:
-                request_schema = docs_annotation or LegacyDocument
-                response_schema = return_annotation or LegacyDocument
-            if not is_generator:
-                if not issubclass(request_schema, DocList) or not issubclass(
-                    response_schema, DocList
-                ):
-                    faulty_schema = (
-                        'request_schema'
-                        if not issubclass(request_schema, DocList)
-                        else 'response_schema'
-                    )
-                    raise Exception(
-                        f'The {faulty_schema} schema for {fn.__name__}: {request_schema} is not a DocList. Please make sure that your endpoints used DocList for request and response schema'
-                    )
-            else:
-                if not issubclass(request_schema, BaseDoc) or not (
-                    issubclass(response_schema, BaseDoc)
-                    or issubclass(response_schema, BaseDoc)
-                ):  # response_schema may be a DocList because by default we use LegacyDocument, and for generators we ignore response
-                    faulty_schema = (
-                        'request_schema'
-                        if not issubclass(request_schema, BaseDoc)
-                        else 'response_schema'
-                    )
-                    raise Exception(
-                        f'The {faulty_schema} schema for {fn.__name__}: {request_schema} is not a BaseDoc. Please make sure that your streaming endpoints used BaseDoc for request and response schema'
-                    )
-
-        return _FunctionWithSchema(fn, request_schema, response_schema)
+        request_schema = docs_annotation or default_annotations
+        response_schema = return_annotation or default_annotations
+        fn_with_schema = _FunctionWithSchema(
+            fn=fn,
+            is_generator=is_generator,
+            is_singleton_doc=is_singleton_doc,
+            is_batch_docs=is_batch_docs,
+            parameters_model=parameters_model,
+            parameters_is_pydantic_model=parameters_is_pydantic_model,
+            request_schema=request_schema,
+            response_schema=response_schema,
+        )
+        fn_with_schema.validate()
+        return fn_with_schema
 
 
 class BaseExecutor(JAMLCompatible, metaclass=ExecutorType):
@@ -308,15 +429,26 @@ class BaseExecutor(JAMLCompatible, metaclass=ExecutorType):
 
         endpoint_models = {}
         for endpoint, function_with_schema in self.requests.items():
-            _is_generator = getattr(function_with_schema.fn, '__is_generator__', False)
+            _is_generator = function_with_schema.is_generator
+            _is_singleton_doc = function_with_schema.is_singleton_doc
+            _is_batch_docs = function_with_schema.is_batch_docs
+            _parameters_model = function_with_schema.parameters_model
             if docarray_v2:
                 # if the endpoint is not a generator endpoint, then the request schema is a DocumentArray and we need
                 # to get the doc_type from the schema
                 # otherwise, since generator endpoints only accept a Document as input, the request_schema is the schema
                 # of the Document
                 if not _is_generator:
-                    request_schema = function_with_schema.request_schema.doc_type
-                    response_schema = function_with_schema.response_schema.doc_type
+                    request_schema = (
+                        function_with_schema.request_schema.doc_type
+                        if _is_batch_docs
+                        else function_with_schema.request_schema
+                    )
+                    response_schema = (
+                        function_with_schema.response_schema.doc_type
+                        if _is_batch_docs
+                        else function_with_schema.response_schema
+                    )
                 else:
                     request_schema = function_with_schema.request_schema
                     response_schema = function_with_schema.response_schema
@@ -333,6 +465,13 @@ class BaseExecutor(JAMLCompatible, metaclass=ExecutorType):
                     'model': response_schema,
                 },
                 'is_generator': _is_generator,
+                'is_singleton_doc': _is_singleton_doc,
+                'parameters': {
+                    'name': _parameters_model.__name__
+                    if _parameters_model is not None
+                    else None,
+                    'model': _parameters_model,
+                },
             }
         return endpoint_models
 
@@ -556,7 +695,81 @@ class BaseExecutor(JAMLCompatible, metaclass=ExecutorType):
     async def __acall_endpoint__(
         self, req_endpoint, tracing_context: Optional['Context'], **kwargs
     ):
-        func, input_doc, output_doc = self.requests[req_endpoint]
+
+        # Decorator to make sure that `parameters` are passed as PydanticModels if needed
+        def parameters_as_pydantic_models_decorator(func, parameters_pydantic_model):
+            @functools.wraps(func)  # Step 2: Use functools.wraps to preserve metadata
+            def wrapper(*args, **kwargs):
+                parameters = kwargs.get('parameters', None)
+                if parameters is not None:
+                    parameters = parameters_pydantic_model(**parameters)
+                    kwargs['parameters'] = parameters
+                result = func(*args, **kwargs)
+                return result
+
+            return wrapper
+
+        # Decorator to make sure that `docs` are fed one by one to method using singleton document serving
+        def loop_docs_decorator(func):
+            @functools.wraps(func)  # Step 2: Use functools.wraps to preserve metadata
+            def wrapper(*args, **kwargs):
+                docs = kwargs.pop('docs')
+                if docarray_v2:
+                    from docarray import DocList
+
+                    ret = DocList[response_schema]()
+                else:
+                    ret = DocumentArray()
+                for doc in docs:
+                    f_ret = func(*args, doc=doc, **kwargs)
+                    if f_ret is None:
+                        ret.append(doc)  # this means change in place
+                    else:
+                        ret.append(f_ret)
+                return ret
+
+            return wrapper
+
+        def async_loop_docs_decorator(func):
+            @functools.wraps(func)  # Step 2: Use functools.wraps to preserve metadata
+            async def wrapper(*args, **kwargs):
+                docs = kwargs.pop('docs')
+                if docarray_v2:
+                    from docarray import DocList
+
+                    ret = DocList[response_schema]()
+                else:
+                    ret = DocumentArray()
+                for doc in docs:
+                    f_ret = await original_func(*args, doc=doc, **kwargs)
+                    if f_ret is None:
+                        ret.append(doc)  # this means change in place
+                    else:
+                        ret.append(f_ret)
+                return ret
+
+            return wrapper
+
+        fn_info = self.requests[req_endpoint]
+        original_func = fn_info.fn
+        is_generator = fn_info.is_generator
+        is_batch_docs = fn_info.is_batch_docs
+        response_schema = fn_info.response_schema
+        parameters_model = fn_info.parameters_model
+        is_parameters_pydantic_model = fn_info.parameters_is_pydantic_model
+
+        func = original_func
+        if is_generator or is_batch_docs:
+            pass
+        elif kwargs.get('docs', None) is not None:
+            # This means I need to pass every doc (most likely 1, but potentially more)
+            if iscoroutinefunction(original_func):
+                func = async_loop_docs_decorator(original_func)
+            else:
+                func = loop_docs_decorator(original_func)
+
+        if is_parameters_pydantic_model:
+            func = parameters_as_pydantic_models_decorator(func, parameters_model)
 
         async def exec_func(
             summary, histogram, histogram_metric_labels, tracing_context
