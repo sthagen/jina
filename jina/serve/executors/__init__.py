@@ -68,7 +68,10 @@ def is_pydantic_model(annotation: Type) -> bool:
     :param annotation: The annotation from which to extract PydantiModel.
     :return: boolean indicating if a Pydantic model is inside the annotation
     """
-    from typing import get_args, get_origin
+    try:
+        from typing import get_args, get_origin
+    except ImportError:
+        from typing_extensions import get_args, get_origin
 
     from pydantic import BaseModel
 
@@ -474,9 +477,11 @@ class BaseExecutor(JAMLCompatible, metaclass=ExecutorType):
                 'is_generator': _is_generator,
                 'is_singleton_doc': _is_singleton_doc,
                 'parameters': {
-                    'name': _parameters_model.__name__
-                    if _parameters_model is not None
-                    else None,
+                    'name': (
+                        _parameters_model.__name__
+                        if _parameters_model is not None
+                        else None
+                    ),
                     'model': _parameters_model,
                 },
             }
