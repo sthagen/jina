@@ -35,9 +35,6 @@ jobs:
         include:
           # linux
           - os: ubuntu-latest
-            python: '3.8'
-            python-manylinux-tag: "cp38-cp38"
-          - os: ubuntu-latest
             python: '3.9'
             python-manylinux-tag: "cp39-cp39"
           - os: ubuntu-latest
@@ -68,12 +65,6 @@ jobs:
             goarch: amd64
 
           # MacOS native
-          - os: macos-latest
-            python: '3.8'
-            python-cibuildwheels: '38'
-            platform_id: macosx_arm64
-            arch: arm64
-            goarch: arm64
           - os: macos-latest
             python: '3.9'
             python-cibuildwheels: '39'
